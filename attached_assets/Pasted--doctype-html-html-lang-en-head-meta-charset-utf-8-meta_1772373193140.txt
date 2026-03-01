@@ -534,7 +534,9 @@
           <div class="box">
             <h4>Training</h4>
             <ul>
-              <li>Back squats (20kg) — 1×160</li>
+              <li>Back squats (30
+              
+              kg) — 1×200</li>
               <li>Deep reps — 1×10</li>
               <li>Back squats (20kg) — 1×5</li>
               <li>Super deep reps — 1×15</li>
