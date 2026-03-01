@@ -1,38 +1,46 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import {
+  days,
+  type CreateDayRequest,
+  type UpdateDayRequest,
+  type DayResponse
+} from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getDays(): Promise<DayResponse[]>;
+  getDay(id: number): Promise<DayResponse | undefined>;
+  createDay(day: CreateDayRequest): Promise<DayResponse>;
+  updateDay(id: number, updates: UpdateDayRequest): Promise<DayResponse>;
+  deleteDay(id: number): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getDays(): Promise<DayResponse[]> {
+    return await db.select().from(days);
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getDay(id: number): Promise<DayResponse | undefined> {
+    const [day] = await db.select().from(days).where(eq(days.id, id));
+    return day;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async createDay(day: CreateDayRequest): Promise<DayResponse> {
+    const [newDay] = await db.insert(days).values(day).returning();
+    return newDay;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateDay(id: number, updates: UpdateDayRequest): Promise<DayResponse> {
+    const [updated] = await db.update(days)
+      .set(updates)
+      .where(eq(days.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDay(id: number): Promise<void> {
+    await db.delete(days).where(eq(days.id, id));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
