@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ebona — D1–D15 Lock-In Logs</title>
+  <style>
+    :root{
+      --bg:#0b0f17;
+      --panel:#0f1624;
+      --panel2:#121b2c;
+      --text:#eaf0ff;
+      --muted:#a7b3d6;
+      --line:#24304a;
+      --accent:#7c5cff;
+      --accent2:#38bdf8;
+      --good:#22c55e;
+      --warn:#f59e0b;
+      --shadow: 0 12px 30px rgba(0,0,0,.35);
+      --radius: 18px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--text);
+      background:
+        radial-gradient(1000px 600px at 20% -10%, rgba(124,92,255,.28), transparent 60%),
+        radial-gradient(900px 650px at 100% 10%, rgba(56,189,248,.18), transparent 55%),
+        radial-gradient(900px 650px at 30% 110%, rgba(34,197,94,.10), transparent 55%),
+        var(--bg);
+      min-height:100vh;
+    }
+
+    .wrap{
+      max-width:1100px;
+      margin:0 auto;
+      padding:22px 16px 48px;
+    }
+
+    header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:18px;
+    }
+    .title{
+      flex:1;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:var(--radius);
+      padding:16px 16px 14px;
+      box-shadow: var(--shadow);
+    }
+    .title h1{
+      margin:0;
+      font-size: clamp(18px, 2.3vw, 26px);
+      letter-spacing:.2px;
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .pill{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(124,92,255,.14);
+      color: #e9e4ff;
+      white-space:nowrap;
+    }
+
+    .controls{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin:16px 0 14px;
+    }
+    .chip{
+      border-radius:999px;
+      padding:8px 12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(15,22,36,.8);
+      color:var(--text);
+      font-size:12px;
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    }
+    .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: var(--accent2);
+      box-shadow: 0 0 0 4px rgba(56,189,248,.16);
+    }
+    .dot.good{ background: var(--good); box-shadow:0 0 0 4px rgba(34,197,94,.14);}
+    .dot.warn{ background: var(--warn); box-shadow:0 0 0 4px rgba(245,158,11,.14);}
+
+    .timeline{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:12px;
+    }
+
+    .card{
+      grid-column: span 6;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:var(--radius);
+      overflow:hidden;
+      box-shadow: var(--shadow);
+      position:relative;
+    }
+    .card::before{
+      content:"";
+      position:absolute; inset:0;
+      background:
+        radial-gradient(700px 280px at 0% 0%, rgba(124,92,255,.18), transparent 60%),
+        radial-gradient(600px 260px at 100% 0%, rgba(56,189,248,.12), transparent 55%);
+      opacity:.7;
+      pointer-events:none;
+    }
+    .card > *{ position:relative; }
+
+    .cardHead{
+      padding:14px 14px 12px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .day{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    .badge{
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(34,197,94,.12);
+      color:#d8ffe4;
+      white-space:nowrap;
+    }
+    .badge.plan{
+      background: rgba(245,158,11,.12);
+      color:#fff2d3;
+    }
+    .day h3{
+      margin:0;
+      font-size:15px;
+      letter-spacing:.2px;
+    }
+
+    .cardBody{
+      padding:12px 14px 14px;
+      display:grid;
+      gap:10px;
+    }
+
+    ul{
+      margin:0;
+      padding-left:18px;
+      color:rgba(234,240,255,.92);
+      line-height:1.45;
+      font-size:13px;
+    }
+    li{ margin:4px 0; }
+
+    .box{
+      background: rgba(18,27,44,.70);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      padding:10px;
+    }
+    .box h4{
+      margin:0 0 6px;
+      font-size:12px;
+      color:#dbe4ff;
+      letter-spacing:.25px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    @media (max-width: 920px){
+      header{ flex-direction:column; }
+      .card{ grid-column: span 12; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <h1>
+          D1–D15 Lock-In Logs
+          <span class="pill">Type + sets/reps only</span>
+          <span class="pill">D15 copied from D14</span>
+        </h1>
+      </div>
+    </header>
+
+    <div class="controls" aria-label="Legend">
+      <span class="chip"><span class="dot good"></span> Logged</span>
+      <span class="chip"><span class="dot warn"></span> Planned</span>
+    </div>
+
+    <section class="timeline" aria-label="Workout timeline">
+
+      <!-- D1 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 1</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Diamond push-ups — 1×40</li>
+              <li>Squats (25kg) — 1×30</li>
+              <li>Dumbbell curls (10 lbs each arm) — 1×100</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D2 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 2</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Diamond push-ups — 1×20</li>
+              <li>Normal push-ups — 1×20</li>
+              <li>Squats (25kg) — 1×35</li>
+              <li>Squats (25kg) — 1×30</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D3 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 3</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Squats (25kg) — 1×40</li>
+              <li>Squats (25kg) — 1×40</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D4 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 4</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (25kg) — 1×70</li>
+              <li>Back squats (25kg) — 1×80</li>
+              <li>Walking — 1×2h</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D5 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 5</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (25kg) — 1×100</li>
+              <li>Back squats (25kg) — 1×60</li>
+              <li>Bicep curls (10 lbs each arm) — 2×100</li>
+              <li>Bulgarian split squats (10 lbs each hand) — 1×15/leg</li>
+              <li>Deep side push-ups — 1×20</li>
+              <li>Diamond push-ups — 2×40</li>
+              <li>Walking — 1×2h</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D6 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 6</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Jogging — 2×5m</li>
+              <li>Plank — 1×1:00</li>
+              <li>Plank — 1×0:40</li>
+              <li>Sit-ups — 1×10</li>
+              <li>Back squats (load) — 1×30</li>
+              <li>Diamond push-ups — 1×20</li>
+              <li>Walking — 1×2h</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D7 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 7</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (load) — 1×110</li>
+              <li>Jogging (mouth closed) — 1×5m</li>
+              <li>Diamond push-ups — 1×40</li>
+              <li>Diamond push-ups — 1×20</li>
+              <li>Walking — 1×2h</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D8 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 8</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats — 1×120</li>
+              <li>One-arm sack-of-rice lifts (25kg) — 1×5 (L)</li>
+              <li>One-arm sack-of-rice lifts (25kg) — 1×5 (R)</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D9 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 9</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>One-arm lifts to waist level (20kg) — 2×20/arm</li>
+              <li>Back squats (20kg) — 1×139</li>
+              <li>Deep squats — 1×3</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D10 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 10</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Rest — 1×day</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D11 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 11</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>One-hand bent pull (20kg) — 2×30</li>
+              <li>Lying sack lift to chest — 1×10</li>
+              <li>Hip thrust (20kg) — 1×50</li>
+              <li>Chest/lying lift — 1×20</li>
+              <li>Hip thrust (20kg) — 1×50</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D12 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 12</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Walking — 1×1.5h</li>
+              <li>Jog (mouth closed) — 1×7m</li>
+              <li>Jog — 1×1m</li>
+              <li>Plank — 2×1:00</li>
+              <li>Bulgarian split squats (no load) — 1×30/side</li>
+              <li>Diamond push-ups — 2×20</li>
+              <li>Bulgarian split squats (no load) — 1×10/side</li>
+              <li>Diamond push-ups — 1×20</li>
+              <li>Diamond push-ups — 1×40</li>
+              <li>Diamond push-ups — 1×30</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D13 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 13</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (20kg) — 1×150</li>
+              <li>Deep reps — 1×5</li>
+              <li>One-arm sack lifts (20kg) — 1×20/arm</li>
+              <li>Walking (no load) — 1×1.5h</li>
+              <li>Loaded walk (10kg backpack) — 1×1.5h</li>
+              <li>Bulgarian squats (with backpack) — 1×40/side</li>
+              <li>Diamond push-ups (with backpack) — 1×60</li>
+              <li>Plank — 1×1:00</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D14 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 14</h3>
+            <span class="badge">Logged</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (20kg) — 1×160</li>
+              <li>Deep reps — 1×10</li>
+              <li>Back squats (20kg) — 1×5</li>
+              <li>Super deep reps — 1×15</li>
+              <li>Loaded walk — 1×1h10m</li>
+              <li>Bulgarian squats (with load) — 2×20</li>
+              <li>Diamond push-ups (with load) — 2×20</li>
+              <li>Plank — 1×1:00</li>
+              <li>One-arm pulls (20kg sack) — 2×20/side</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- D15 -->
+      <article class="card">
+        <div class="cardHead">
+          <div class="day">
+            <h3>Day 15</h3>
+            <span class="badge plan">Planned</span>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div class="box">
+            <h4>Training</h4>
+            <ul>
+              <li>Back squats (20kg) — 1×160</li>
+              <li>Deep reps — 1×10</li>
+              <li>Back squats (20kg) — 1×5</li>
+              <li>Super deep reps — 1×15</li>
+              <li>Loaded walk — 1×1h10m</li>
+              <li>Bulgarian squats (with load) — 2×20</li>
+              <li>Diamond push-ups (with load) — 2×20</li>
+              <li>Plank — 1×1:00</li>
+              <li>One-arm pulls (20kg sack) — 2×20/side</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+    </section>
+  </div>
+</body>
+</html>
