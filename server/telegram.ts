@@ -525,22 +525,28 @@ Keep going, John! \u{1F525}`;
     if (data === "view_home") {
       await bot.answerCallbackQuery(query.id);
       const allDays = await storage.getDaysByCategory("home");
-      const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber).slice(0, 5);
-      let text = "\u{1F3E0} <b>Recent Home Workouts</b>\n\n";
+      const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+      if (sorted.length === 0) { await bot.sendMessage(chatId, "\u274C No home logs found."); return; }
+      let text = `\u{1F3E0} <b>HOME WORKOUT LOGS</b>\n(D1\u2013D${sorted[sorted.length - 1].dayNumber})\n\n`;
       sorted.forEach(d => { text += formatDayLog(d) + "\n"; });
-      text += "\n<i>Use /export_home_logs for full export</i>";
-      await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+      const chunks = splitMessage(text);
+      for (const chunk of chunks) {
+        await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+      }
       return;
     }
 
     if (data === "view_gym") {
       await bot.answerCallbackQuery(query.id);
       const allDays = await storage.getDaysByCategory("gym");
-      const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber).slice(0, 5);
-      let text = "\u{1F3CB}\u{FE0F} <b>Recent Gym Workouts</b>\n\n";
+      const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+      if (sorted.length === 0) { await bot.sendMessage(chatId, "\u274C No gym logs found."); return; }
+      let text = `\u{1F3CB}\u{FE0F} <b>GYM WORKOUT LOGS</b>\n(D1\u2013D${sorted[sorted.length - 1].dayNumber})\n\n`;
       sorted.forEach(d => { text += formatDayLog(d) + "\n"; });
-      text += "\n<i>Use /export_gym_logs for full export</i>";
-      await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+      const chunks = splitMessage(text);
+      for (const chunk of chunks) {
+        await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+      }
       return;
     }
 
