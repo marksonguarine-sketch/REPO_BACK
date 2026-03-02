@@ -172,19 +172,30 @@ export async function startTelegramBot() {
       if (data.ok && data.result?.length) {
         for (const update of data.result) {
           pollingOffset = update.update_id + 1;
-          bot.processUpdate(update);
-        }
-      } else if (!data.ok && data.error_code === 409) {
-        await new Promise(r => setTimeout(r, 3000));
-        try {
-          const kickRes2 = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
-          const kickData2 = await kickRes2.json() as any;
-          if (kickData2.ok && kickData2.result?.length) {
-            pollingOffset = kickData2.result[kickData2.result.length - 1].update_id + 1;
+          const msg = update.message;
+          const cbq = update.callback_query;
+          log(`Update ${update.update_id}: ${msg ? `msg from ${msg.chat.id}: "${msg.text || '[no text]'}"` : cbq ? `callback: ${cbq.data}` : 'unknown type'}`, "telegram");
+          try {
+            bot.processUpdate(update);
+          } catch (procErr: any) {
+            log(`processUpdate error: ${procErr.message}`, "telegram");
           }
-        } catch {}
+        }
+      } else if (!data.ok) {
+        log(`getUpdates error: ${data.error_code} ${data.description}`, "telegram");
+        if (data.error_code === 409) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            const kickRes2 = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
+            const kickData2 = await kickRes2.json() as any;
+            if (kickData2.ok && kickData2.result?.length) {
+              pollingOffset = kickData2.result[kickData2.result.length - 1].update_id + 1;
+            }
+          } catch {}
+        }
       }
     } catch (e: any) {
+      log(`Poll fetch error: ${e.message}`, "telegram");
       await new Promise(r => setTimeout(r, 2000));
     }
     setTimeout(manualPoll, 100);
@@ -929,12 +940,19 @@ Keep going, John! \u{1F525}`;
 
     const state = userStates.get(chatId);
     if (!state) {
-      await bot.sendChatAction(chatId, "typing");
-      const response = await chatWithGeminiTelegram(msg.text);
-      const formatted = formatGeminiResponse(response);
-      const chunks = splitMessage(formatted);
-      for (const chunk of chunks) {
-        await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+      try {
+        log(`Catch-all AI handler triggered for: "${msg.text}"`, "telegram");
+        await bot.sendChatAction(chatId, "typing");
+        const response = await chatWithGeminiTelegram(msg.text);
+        log(`Gemini response received (${response?.length || 0} chars)`, "telegram");
+        const formatted = formatGeminiResponse(response);
+        const chunks = splitMessage(formatted);
+        for (const chunk of chunks) {
+          await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+        }
+      } catch (err: any) {
+        log(`Catch-all AI error: ${err.message}\n${err.stack}`, "telegram");
+        await bot.sendMessage(chatId, `\u274C AI error: ${esc(err.message || "Unknown error")}`).catch(() => {});
       }
       return;
     }
