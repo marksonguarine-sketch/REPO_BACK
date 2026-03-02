@@ -20,7 +20,7 @@ export default function HomePage() {
           <h1 className="m-0 text-[clamp(18px,2.3vw,26px)] tracking-[0.2px] flex gap-3 items-center flex-wrap drop-shadow-md">
             <span className="flex items-center gap-2 bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
               <Zap size={24} className="text-[#7c5cff]" />
-              Ebona Lock-In Logs
+              John's Lock-In Logs
             </span>
             <span className="text-[12px] px-3 py-1.5 rounded-full border border-white/10 bg-[#7c5cff]/10 text-[#e9e4ff] whitespace-nowrap shadow-sm font-medium tracking-wide">
               Manage via Telegram Bot

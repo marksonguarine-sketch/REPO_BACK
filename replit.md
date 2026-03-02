@@ -1,4 +1,4 @@
-# Ebona Lock-In Logs
+# John's Lock-In Logs
 
 ## Overview
 Workout logging application for tracking home and gym workouts (D1-D15+). Features a Telegram bot for managing logs and a read-only web dashboard.
@@ -6,14 +6,15 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 ## Architecture
 - **Frontend**: React + Vite + Tailwind CSS + Framer Motion
 - **Backend**: Express.js + Drizzle ORM + PostgreSQL
-- **Bot**: node-telegram-bot-api (polling mode)
+- **Bot**: node-telegram-bot-api (polling mode, HTML parse mode)
 
 ## Key Features
 - **Home/Gym toggle** - Switch between workout categories
-- **Intensity bar graph** - Visual daily intensity, scrollable
+- **Intensity bar graph** - Visual daily intensity, scrollable (no number labels)
 - **Daily intake section** - Supplement info (home view only)
-- **Telegram bot** - 16 commands for CRUD operations
+- **Telegram bot** - 18 commands for CRUD + status operations
 - **Web is read-only** - All editing done via Telegram
+- **Write endpoints protected** - POST/PUT/DELETE require x-bot-secret header
 
 ## Database Schema
 - `days` table: id, day_number, status, exercises (text array), category (home/gym)
@@ -33,7 +34,7 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 - DATABASE_URL - PostgreSQL connection
 - TELEGRAM_BOT_TOKEN - Telegram bot token
 - TELEGRAM_OWNER_ID - Allowed Telegram user ID
-- SESSION_SECRET - Express session secret
+- SESSION_SECRET - Express session secret (also used as bot API secret)
 
 ## Telegram Bot Commands
-/start, /help, /commands, /save_home_d[N], /save_gym_d[N], /update_d[N]_home, /update_d[N]_gym, /view_home_d[N], /view_gym_d[N], /export_home_logs, /export_gym_logs, /delete_home_d[N], /delete_gym_d[N], /stats, /intensity_home, /intensity_gym
+/start, /help, /commands, /save_home_d[N], /save_gym_d[N], /update_d[N]_home, /update_d[N]_gym, /home_status_updated[N], /gym_status_updated[N], /view_home_d[N], /view_gym_d[N], /export_home_logs, /export_gym_logs, /delete_home_d[N], /delete_gym_d[N], /stats, /intensity_home, /intensity_gym

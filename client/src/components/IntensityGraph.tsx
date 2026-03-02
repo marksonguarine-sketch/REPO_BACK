@@ -91,7 +91,6 @@ export function IntensityGraph({ days, category }: IntensityGraphProps) {
           const isPlanned = status === "Planned";
           return (
             <div key={day} className="flex flex-col items-center gap-1.5 min-w-[44px]" data-testid={`bar-day-${day}`}>
-              <span className="text-[10px] text-white/50 font-mono">{intensity}</span>
               <div className="w-8 rounded-t-md relative" style={{ height: 120 }}>
                 <div
                   className="absolute bottom-0 w-full rounded-t-md transition-all duration-500"
