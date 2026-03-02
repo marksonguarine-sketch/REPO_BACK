@@ -21,6 +21,15 @@ async function getAllLogsContext(): Promise<string> {
   for (const d of sortedGym) {
     context += `Day ${d.dayNumber} [${d.status}]: ${d.exercises.join(", ")}\n`;
   }
+
+  const supplements = await storage.getSupplements();
+  if (supplements.length > 0) {
+    context += "\n--- DAILY SUPPLEMENT INTAKE ---\n";
+    for (const s of supplements) {
+      context += `${s.name}: ${s.amount} (ID: ${s.id})\n`;
+    }
+  }
+
   return context;
 }
 
@@ -59,6 +68,10 @@ IMPORTANT RULES:
 - You can set reminders for John (birthdays, tasks, hydration, etc.)
 - You can create and restore backups of all data
 - When analyzing images, describe what you see and provide fitness-related feedback if relevant
+- You can manage John's daily supplement intake list (view, add, update name/amount/color, delete)
+- When user says "show supplements" or "list supplements", call view_supplements
+- When user says "change creatine to 10g", first call view_supplements to find the ID, then call update_supplement
+- When user says "add vitamin D 5000 IU", call add_supplement with a suitable color
 
 CURRENT DATE AND TIME (Philippines timezone): ${getCurrentPHTime()}
 CURRENT UNIX TIMESTAMP (milliseconds): ${getCurrentPHTimestamp()}
@@ -253,6 +266,49 @@ const functionDeclarations = [
         interval_ms: { type: Type.NUMBER, description: "New interval in ms for recurring reminders. Use: 1000=1sec, 60000=1min, 3600000=1hr, 86400000=1day, 604800000=1week (optional)" },
       },
       required: ["reminder_id"],
+    },
+  },
+  {
+    name: "view_supplements",
+    description: "View all supplements in John's daily intake list.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "add_supplement",
+    description: "Add a new supplement to the daily intake list.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING, description: "Supplement name (e.g. 'Creatine', 'Whey')" },
+        amount: { type: Type.STRING, description: "Amount/dosage (e.g. '5g', '300 mg', '132g (33g = 50g of protein)')" },
+        color: { type: Type.STRING, description: "Hex color for UI display (e.g. '#7c5cff', '#22c55e'). Pick a visually distinct color." },
+      },
+      required: ["name", "amount", "color"],
+    },
+  },
+  {
+    name: "update_supplement",
+    description: "Update an existing supplement's name, amount/dosage, or color.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        supplement_id: { type: Type.INTEGER, description: "The supplement ID to update (from view_supplements)" },
+        name: { type: Type.STRING, description: "New name (optional)" },
+        amount: { type: Type.STRING, description: "New amount/dosage (optional)" },
+        color: { type: Type.STRING, description: "New hex color (optional)" },
+      },
+      required: ["supplement_id"],
+    },
+  },
+  {
+    name: "delete_supplement",
+    description: "Delete a supplement from the daily intake list.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        supplement_id: { type: Type.INTEGER, description: "The supplement ID to delete (from view_supplements)" },
+      },
+      required: ["supplement_id"],
     },
   },
   {
@@ -455,6 +511,50 @@ async function executeFunction(name: string, args: any): Promise<string> {
         const updated = await storage.getReminderById(reminder_id);
         const timeStr = updated ? new Date(updated.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }) : "unknown";
         return JSON.stringify({ success: true, message: `Reminder #${reminder_id} updated.`, updated: { id: reminder_id, message: updated?.message, triggerAt: timeStr, isRecurring: updated?.isRecurring, intervalMs: updated?.intervalMs } });
+      }
+
+      case "view_supplements": {
+        const supplements = await storage.getSupplements();
+        if (supplements.length === 0) {
+          return JSON.stringify({ success: true, total: 0, supplements: [], message: "No supplements in the daily intake list yet." });
+        }
+        const numbered = supplements.map((s: any, idx: number) => ({
+          listNumber: idx + 1,
+          id: s.id,
+          name: s.name,
+          amount: s.amount,
+          color: s.color,
+        }));
+        return JSON.stringify({ success: true, total: numbered.length, supplements: numbered });
+      }
+
+      case "add_supplement": {
+        const { name, amount, color } = args;
+        const existing = await storage.getSupplementByName(name);
+        if (existing) {
+          return JSON.stringify({ error: `Supplement "${name}" already exists (ID: ${existing.id}). Use update_supplement to change it.` });
+        }
+        const supplement = await storage.addSupplement(name, amount, color);
+        return JSON.stringify({ success: true, message: `Supplement "${name}" added with amount ${amount}.`, supplement });
+      }
+
+      case "update_supplement": {
+        const { supplement_id, name, amount, color } = args;
+        const updates: any = {};
+        if (name !== undefined) updates.name = name;
+        if (amount !== undefined) updates.amount = amount;
+        if (color !== undefined) updates.color = color;
+        const updated = await storage.updateSupplement(supplement_id, updates);
+        if (!updated) {
+          return JSON.stringify({ error: `Supplement #${supplement_id} not found.` });
+        }
+        return JSON.stringify({ success: true, message: `Supplement #${supplement_id} updated.`, supplement: updated });
+      }
+
+      case "delete_supplement": {
+        const { supplement_id } = args;
+        await storage.deleteSupplement(supplement_id);
+        return JSON.stringify({ success: true, message: `Supplement #${supplement_id} deleted.` });
       }
 
       case "create_backup": {

@@ -14,9 +14,9 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 ## Key Features
 - **Home/Gym toggle** - Switch between workout categories
 - **Intensity bar graph** - Visual daily intensity, scrollable (no number labels)
-- **Daily intake section** - Supplement info (home view only)
+- **Daily intake section** - Dynamic supplement list from MongoDB (home view only), manageable via TG Gemini AI
 - **Telegram bot** - 22+ commands for CRUD + status + AI chat + browser memory + backup + reminders
-- **Gemini AI (Telegram)** - Function calling with 18 declared functions for natural language workout management, persistent chat memory, image analysis, web search
+- **Gemini AI (Telegram)** - Function calling with 23 declared functions for natural language workout management, supplements, persistent chat memory, image analysis, web search
 - **Gemini AI (Web)** - Conversational AI with session history + persistent browser memory + Google Search grounding
 - **Web chat widget** - Enhanced floating chat with glassmorphic UI, quick prompts, message counter, scroll indicator, animated transitions
 - **Chat popup** - "Try my web chat AI!" cursive handwritten popup with arrow, auto-dismiss on click or 5min
@@ -30,12 +30,13 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 - **Image generation** - `/create_image [prompt]` using `gemini-2.0-flash-exp` model with responseModalities, supports reference images via photo caption
 
 ## Database (MongoDB - Railway)
-Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `backup_logs`, `counters`
+Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `backup_logs`, `counters`, `supplements`
 - `days`: id, dayNumber, status, exercises (string array), category (home/gym)
 - `visitors`: id, fingerprint, referrer, country, city, isUnique, visitedAt
 - `chat_memory`: id, role, content, createdAt (TG bot conversation history)
 - `browser_memory`: content, updatedAt (persistent web chat context, single-doc upsert)
 - `reminders`: id, message, triggerAt, sent, createdAt
+- `supplements`: id, name, amount, color (daily intake supplements, managed via TG AI)
 - `backup_logs`: action, timestamp, details
 - `counters`: auto-increment sequence tracking per collection
 
@@ -69,7 +70,7 @@ Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `
 + Photo upload (AI analysis), JSON file upload (backup restore)
 
 ## Gemini Function Calling (Telegram)
-19 functions: save_workout, update_workout, delete_workout, view_workout, view_all_workouts, mark_status_done, get_stats, get_intensity, export_logs, save_browser_memory, view_browser_memory, delete_browser_memory, clear_ai_memory, set_reminder, list_reminders, delete_reminder, update_reminder, create_backup, get_last_backup_info
+23 functions: save_workout, update_workout, delete_workout, view_workout, view_all_workouts, mark_status_done, get_stats, get_intensity, export_logs, save_browser_memory, view_browser_memory, delete_browser_memory, clear_ai_memory, set_reminder, list_reminders, delete_reminder, update_reminder, view_supplements, add_supplement, update_supplement, delete_supplement, create_backup, get_last_backup_info
 
 ## API Endpoints
 - GET /api/days?category=home|gym - List workout days
@@ -79,6 +80,7 @@ Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `
 - DELETE /api/days/:id - Delete day (protected)
 - POST /api/visitor - Track visitor (fingerprint, referrer)
 - POST /api/chat - Web AI chat (message, history)
+- GET /api/supplements - List supplements (dynamic daily intake)
 - GET /health - Healthcheck endpoint
 
 ## Caching

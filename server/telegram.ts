@@ -1469,11 +1469,16 @@ export async function handleTelegramWebhook(update: any) {
 
     const state = webhookStates.get(chatId);
     if (!state) {
-      await tgAction(chatId, "typing");
-      const response = await chatWithGeminiTelegram(text);
-      const formatted = formatGeminiResponse(response);
-      const chunks = splitMessage(formatted);
-      for (const chunk of chunks) await tgSend(chatId, chunk);
+      try {
+        await tgAction(chatId, "typing");
+        const response = await chatWithGeminiTelegram(text);
+        const formatted = formatGeminiResponse(response);
+        const chunks = splitMessage(formatted);
+        for (const chunk of chunks) await tgSend(chatId, chunk);
+      } catch (err: any) {
+        console.error("Webhook AI error:", err);
+        await tgSend(chatId, `\u274C AI error: ${esc(err.message || "Unknown error")}`).catch(() => {});
+      }
       return;
     }
 

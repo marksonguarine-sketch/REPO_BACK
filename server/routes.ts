@@ -180,6 +180,30 @@ export async function registerRoutes(
     }
   });
 
+  const existingSupplements = await storage.getSupplements();
+  if (existingSupplements.length === 0) {
+    const defaultSupplements = [
+      { name: "Creatine", amount: "5g", color: "#7c5cff" },
+      { name: "Whey", amount: "132g (33g = 50g of protein)", color: "#38bdf8" },
+      { name: "Caffeine", amount: "700mg", color: "#f59e0b" },
+      { name: "L-Citrulline", amount: "8,000 mg", color: "#22c55e" },
+      { name: "Beta-Alanine", amount: "3,200 mg", color: "#ec4899" },
+      { name: "L-Theanine", amount: "400 mg", color: "#a78bfa" },
+      { name: "Dicaffeine Malate", amount: "300 mg", color: "#f97316" },
+      { name: "BioPerine (Piperine 50:1)", amount: "4.8 mg", color: "#14b8a6" },
+      { name: "Capsaicine", amount: "3 mg", color: "#ef4444" },
+      { name: "Neurocore Secret Blend", amount: "5,523 mg", color: "#8b5cf6" },
+    ];
+    for (const s of defaultSupplements) {
+      await storage.addSupplement(s.name, s.amount, s.color);
+    }
+  }
+
+  app.get("/api/supplements", async (_req, res) => {
+    const supplements = await storage.getSupplements();
+    res.json(supplements);
+  });
+
   app.post("/api/chat", async (req, res) => {
     try {
       const { message, history } = req.body;

@@ -23,6 +23,11 @@ export interface IStorage {
   getReminderById(id: number): Promise<any | null>;
   getAllReminders(): Promise<any[]>;
   deleteReminder(id: number): Promise<void>;
+  getSupplements(): Promise<any[]>;
+  addSupplement(name: string, amount: string, color: string): Promise<any>;
+  updateSupplement(id: number, updates: Partial<{ name: string; amount: string; color: string }>): Promise<any | null>;
+  deleteSupplement(id: number): Promise<void>;
+  getSupplementByName(name: string): Promise<any | null>;
 }
 
 import { mongoStorage } from "./mongo-storage";

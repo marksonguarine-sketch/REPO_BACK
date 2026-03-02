@@ -161,6 +161,11 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       return json(200, { response });
     }
 
+    if (path === "/supplements" && method === "GET") {
+      const supplements = await storage.getSupplements();
+      return json(200, supplements);
+    }
+
     if (path === "/health" && method === "GET") {
       return json(200, { status: "ok" });
     }

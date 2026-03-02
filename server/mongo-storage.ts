@@ -47,6 +47,14 @@ interface MongoReminder {
   createdAt: Date;
 }
 
+interface MongoSupplement {
+  _id?: ObjectId;
+  id: number;
+  name: string;
+  amount: string;
+  color: string;
+}
+
 interface MongoBackupLog {
   _id?: ObjectId;
   action: string;
@@ -297,6 +305,40 @@ export class MongoStorage implements IStorage {
     await col.deleteOne({ id });
   }
 
+  async getSupplements() {
+    const col = await getCollection<MongoSupplement>("supplements");
+    const docs = await col.find({}).sort({ id: 1 }).toArray();
+    return docs.map(d => ({ id: d.id, name: d.name, amount: d.amount, color: d.color }));
+  }
+
+  async addSupplement(name: string, amount: string, color: string) {
+    const col = await getCollection<MongoSupplement>("supplements");
+    const id = await getNextId("supplements");
+    const supplement = { id, name, amount, color };
+    await col.insertOne(supplement as any);
+    return supplement;
+  }
+
+  async updateSupplement(id: number, updates: Partial<{ name: string; amount: string; color: string }>) {
+    const col = await getCollection<MongoSupplement>("supplements");
+    await col.updateOne({ id }, { $set: updates });
+    const doc = await col.findOne({ id });
+    if (!doc) return null;
+    return { id: doc.id, name: doc.name, amount: doc.amount, color: doc.color };
+  }
+
+  async deleteSupplement(id: number) {
+    const col = await getCollection<MongoSupplement>("supplements");
+    await col.deleteOne({ id });
+  }
+
+  async getSupplementByName(name: string) {
+    const col = await getCollection<MongoSupplement>("supplements");
+    const doc = await col.findOne({ name: { $regex: new RegExp(`^${name}$`, "i") } });
+    if (!doc) return null;
+    return { id: doc.id, name: doc.name, amount: doc.amount, color: doc.color };
+  }
+
   async logBackup(action: string, details: string) {
     const col = await getCollection<MongoBackupLog>("backup_logs");
     await col.insertOne({ action, timestamp: new Date(), details } as any);
@@ -318,6 +360,7 @@ export class MongoStorage implements IStorage {
     const reminders = await (await db.collection("reminders")).find({}).toArray();
     const backupLogs = await (await db.collection("backup_logs")).find({}).toArray();
     const counters = await (await db.collection("counters")).find({}).toArray();
+    const supplements = await (await db.collection("supplements")).find({}).toArray();
 
     const clean = (docs: any[]) => docs.map(d => {
       const { _id, ...rest } = d;
@@ -334,13 +377,14 @@ export class MongoStorage implements IStorage {
         reminders: clean(reminders),
         backup_logs: clean(backupLogs),
         counters: clean(counters),
+        supplements: clean(supplements),
       },
     };
   }
 
   async importAllData(data: any) {
     const db = await getMongoDb();
-    const collections = ["days", "visitors", "chat_memory", "browser_memory", "reminders", "backup_logs", "counters"];
+    const collections = ["days", "visitors", "chat_memory", "browser_memory", "reminders", "backup_logs", "counters", "supplements"];
 
     for (const colName of collections) {
       const col = db.collection(colName);
