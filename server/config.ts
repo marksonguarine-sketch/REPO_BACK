@@ -8,7 +8,10 @@ export const config = {
   mongoUri: process.env.MONGODB_URI || process.env.MONGO_URL || "",
   mongoDbName: process.env.MONGODB_DB_NAME || process.env.MONGO_DB_NAME || "johns_lockin_logs",
   geminiApiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "",
-  telegramOwnerId: parseNumber(process.env.TELEGRAM_OWNER_ID, 7474049767),
+  telegramOwnerId: parseNumber(
+    process.env.TELEGRAM_OWNER_ID || process.env.TELEGRAM_CHAT_ID || process.env.OWNER_ID,
+    7474049767
+  ),
 };
 
 export function requireEnv(value: string, name: string): string {
