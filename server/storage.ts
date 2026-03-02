@@ -3,11 +3,13 @@ import {
   days,
   visitors,
   chatMemory,
+  browserMemory,
   type CreateDayRequest,
   type UpdateDayRequest,
   type DayResponse,
   type Visitor,
   type ChatMemory,
+  type BrowserMemory,
 } from "@shared/schema";
 import { eq, and, count } from "drizzle-orm";
 
@@ -24,6 +26,9 @@ export interface IStorage {
   getChatMemory(): Promise<ChatMemory[]>;
   addChatMemory(role: string, content: string): Promise<ChatMemory>;
   clearChatMemory(): Promise<void>;
+  getBrowserMemory(): Promise<string | null>;
+  saveBrowserMemory(content: string): Promise<void>;
+  deleteBrowserMemory(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -96,6 +101,24 @@ export class DatabaseStorage implements IStorage {
 
   async clearChatMemory(): Promise<void> {
     await db.delete(chatMemory);
+  }
+
+  async getBrowserMemory(): Promise<string | null> {
+    const rows = await db.select().from(browserMemory).limit(1);
+    return rows.length > 0 ? rows[0].content : null;
+  }
+
+  async saveBrowserMemory(content: string): Promise<void> {
+    const rows = await db.select().from(browserMemory).limit(1);
+    if (rows.length > 0) {
+      await db.update(browserMemory).set({ content, updatedAt: new Date() }).where(eq(browserMemory.id, rows[0].id));
+    } else {
+      await db.insert(browserMemory).values({ content });
+    }
+  }
+
+  async deleteBrowserMemory(): Promise<void> {
+    await db.delete(browserMemory);
   }
 }
 

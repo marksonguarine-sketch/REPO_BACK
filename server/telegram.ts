@@ -117,6 +117,7 @@ export function startTelegramBot() {
     { command: "intensity_gym", description: "Gym intensity chart" },
     { command: "ai", description: "Chat with AI assistant" },
     { command: "clear_memory", description: "Clear AI chat memory" },
+    { command: "save_browser_memory", description: "Save web chat AI memory" },
   ]).catch(err => log(`Failed to set commands: ${err.message}`, "telegram"));
 
   bot.onText(/\/start/, async (msg) => {
@@ -184,6 +185,17 @@ export function startTelegramBot() {
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 /ai [message] \u2014 Chat with AI (remembers conversations)
 /clear_memory \u2014 Clear AI conversation memory
+/save_browser_memory \u2014 Save persistent memory for web chat AI
+
+\u{1F4AC} <b>NATURAL LANGUAGE</b>
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+Just type naturally! e.g.:
+\u2022 "save my day 16 home"
+\u2022 "mark gym day 5 as done"
+\u2022 "update my d14 home"
+\u2022 "delete home day 3"
+\u2022 "show my stats"
+\u2022 "update the memory in the web chat"
 
 \u{1F4AA} Keep pushing, John!`;
     await bot.sendMessage(chatId, helpText, { parse_mode: "HTML" });
@@ -214,7 +226,9 @@ export function startTelegramBot() {
 /intensity_gym
 /ai [message]
 /clear_memory
+/save_browser_memory
 
+<i>Or just type naturally \u2014 AI understands!</i>
 <i>Use /help for detailed explanations.</i>`;
     await bot.sendMessage(chatId, commandsList, { parse_mode: "HTML" });
   });
@@ -238,6 +252,13 @@ export function startTelegramBot() {
     if (!isOwner(chatId)) return;
     await storage.clearChatMemory();
     await bot.sendMessage(chatId, "\u{1F9F9} AI conversation memory has been cleared!");
+  });
+
+  bot.onText(/\/save_browser_memory/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!isOwner(chatId)) return;
+    userStates.set(chatId, { action: "browser_memory" });
+    await bot.sendMessage(chatId, "\u{1F4DD} Please type the memory/instructions you want the web chat AI to always reference:\n\n<i>(This will be saved permanently and used in every web chat conversation)</i>", { parse_mode: "HTML" });
   });
 
   // STATUS UPDATE commands
@@ -608,6 +629,21 @@ Keep going, John! \u{1F525}`;
       for (const chunk of chunks) {
         await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
       }
+      return;
+    }
+
+    if (state.action === "browser_memory") {
+      try {
+        await storage.saveBrowserMemory(msg.text);
+        await bot.sendMessage(chatId, "\u2705 <b>Browser memory saved!</b>\n\nThe web chat AI will now reference this in every conversation.", { parse_mode: "HTML" });
+        const comment = await getGeminiComment("Saved browser memory", `Content: ${msg.text.substring(0, 200)}`);
+        if (comment) {
+          await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+        }
+      } catch {
+        await bot.sendMessage(chatId, "\u274C Failed to save browser memory.");
+      }
+      userStates.delete(chatId);
       return;
     }
 

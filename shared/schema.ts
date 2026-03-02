@@ -27,6 +27,12 @@ export const chatMemory = pgTable("chat_memory", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const browserMemory = pgTable("browser_memory", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const insertDaySchema = createInsertSchema(days).omit({ id: true });
 export const insertVisitorSchema = createInsertSchema(visitors).omit({ id: true, visitedAt: true });
 export const insertChatMemorySchema = createInsertSchema(chatMemory).omit({ id: true, createdAt: true });
@@ -35,6 +41,7 @@ export type Day = typeof days.$inferSelect;
 export type InsertDay = z.infer<typeof insertDaySchema>;
 export type Visitor = typeof visitors.$inferSelect;
 export type ChatMemory = typeof chatMemory.$inferSelect;
+export type BrowserMemory = typeof browserMemory.$inferSelect;
 
 export type CreateDayRequest = InsertDay;
 export type UpdateDayRequest = Partial<InsertDay>;

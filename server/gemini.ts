@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { storage } from "./storage";
 import { log } from "./index";
 
@@ -22,14 +22,313 @@ async function getAllLogsContext(): Promise<string> {
   return context;
 }
 
-const SYSTEM_PROMPT = `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You have full access to all workout data. Be supportive, motivating, and knowledgeable about fitness. When John logs, edits, or completes a workout day, praise and comment on his progress. Keep responses concise but encouraging. Use bold text (**text**) for emphasis. Format lists cleanly. You know all about John's workout history and can analyze trends, suggest improvements, and celebrate milestones.`;
+const SYSTEM_PROMPT = `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You have full access to all workout data and can execute commands to manage workouts.
+
+IMPORTANT RULES:
+- You can save, update, delete, and manage workouts using the available functions
+- When John wants to save or update a workout, ask him for the exercises if he hasn't provided them yet
+- When John provides exercises, parse each line as a separate exercise entry
+- Be supportive, motivating, and knowledgeable about fitness
+- Keep responses concise but encouraging
+- Use bold text (**text**) for emphasis
+- After executing any action, confirm what you did and add a short motivating comment
+- You can also manage browser memory (persistent instructions for the web chat AI)
+- For status updates, "Logged" means the workout is done/completed
+- When deleting, always confirm before executing unless John is explicit`;
+
+const functionDeclarations = [
+  {
+    name: "save_workout",
+    description: "Save a new workout day. Use when John wants to log/save a new workout day.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+        day_number: { type: Type.INTEGER, description: "The day number (e.g. 16)" },
+        exercises: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of exercises, each as a string like 'Diamond push-ups — 3×20'" },
+      },
+      required: ["category", "day_number", "exercises"],
+    },
+  },
+  {
+    name: "update_workout",
+    description: "Update exercises for an existing workout day.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+        day_number: { type: Type.INTEGER, description: "The day number" },
+        exercises: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Updated list of exercises" },
+      },
+      required: ["category", "day_number", "exercises"],
+    },
+  },
+  {
+    name: "mark_status_done",
+    description: "Mark a workout day as done/completed (status = 'Logged'). Use when John says a day is done/completed/finished.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+        day_number: { type: Type.INTEGER, description: "The day number" },
+      },
+      required: ["category", "day_number"],
+    },
+  },
+  {
+    name: "delete_workout",
+    description: "Delete a workout day entirely.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+        day_number: { type: Type.INTEGER, description: "The day number" },
+      },
+      required: ["category", "day_number"],
+    },
+  },
+  {
+    name: "view_workout",
+    description: "View a specific workout day's details.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+        day_number: { type: Type.INTEGER, description: "The day number" },
+      },
+      required: ["category", "day_number"],
+    },
+  },
+  {
+    name: "view_all_workouts",
+    description: "View all workout days for a category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+      },
+      required: ["category"],
+    },
+  },
+  {
+    name: "get_stats",
+    description: "Get overall workout progress statistics.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    },
+  },
+  {
+    name: "get_intensity",
+    description: "Get intensity chart data for a category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+      },
+      required: ["category"],
+    },
+  },
+  {
+    name: "export_logs",
+    description: "Export all workout logs for a category.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        category: { type: Type.STRING, description: "Workout category: 'home' or 'gym'" },
+      },
+      required: ["category"],
+    },
+  },
+  {
+    name: "save_browser_memory",
+    description: "Save or update persistent memory/instructions for the web chat AI. This memory will be referenced by the AI in every web chat conversation.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        content: { type: Type.STRING, description: "The memory content/instructions to save" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "view_browser_memory",
+    description: "View the current browser/web chat memory.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    },
+  },
+  {
+    name: "delete_browser_memory",
+    description: "Delete the browser/web chat memory.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    },
+  },
+  {
+    name: "clear_ai_memory",
+    description: "Clear the Telegram AI conversation memory/history.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+    },
+  },
+];
+
+function calcIntensity(exercises: string[]): number {
+  let score = 0;
+  for (const ex of exercises) {
+    const lower = ex.toLowerCase();
+    if (lower.includes("rest")) continue;
+    const setsReps = ex.match(/(\d+)\s*[x\u00D7]\s*(\d+)/i);
+    if (setsReps) {
+      score += parseInt(setsReps[1]) * parseInt(setsReps[2]);
+    } else {
+      score += 10;
+    }
+    const weight = ex.match(/(\d+)\s*kg/i);
+    if (weight) {
+      score += parseInt(weight[1]) * 0.5;
+    }
+  }
+  return Math.round(score);
+}
+
+async function executeFunction(name: string, args: any): Promise<string> {
+  try {
+    switch (name) {
+      case "save_workout": {
+        const { category, day_number, exercises } = args;
+        const existing = await storage.getDayByNumberAndCategory(day_number, category);
+        if (existing) {
+          return JSON.stringify({ error: `${category} Day ${day_number} already exists. Use update_workout to modify it.` });
+        }
+        const day = await storage.createDay({
+          dayNumber: day_number,
+          status: "Logged",
+          exercises,
+          category,
+        });
+        return JSON.stringify({ success: true, message: `${category} Day ${day_number} saved with ${exercises.length} exercises.`, day });
+      }
+
+      case "update_workout": {
+        const { category, day_number, exercises } = args;
+        const existing = await storage.getDayByNumberAndCategory(day_number, category);
+        if (!existing) {
+          return JSON.stringify({ error: `${category} Day ${day_number} not found. Use save_workout to create it.` });
+        }
+        const updated = await storage.updateDay(existing.id, { exercises, status: "Logged" });
+        return JSON.stringify({ success: true, message: `${category} Day ${day_number} updated with ${exercises.length} exercises.`, day: updated });
+      }
+
+      case "mark_status_done": {
+        const { category, day_number } = args;
+        const existing = await storage.getDayByNumberAndCategory(day_number, category);
+        if (!existing) {
+          return JSON.stringify({ error: `${category} Day ${day_number} not found.` });
+        }
+        if (existing.status === "Logged") {
+          return JSON.stringify({ success: true, message: `${category} Day ${day_number} is already marked as done/Logged.` });
+        }
+        await storage.updateDay(existing.id, { status: "Logged" });
+        return JSON.stringify({ success: true, message: `${category} Day ${day_number} marked as Logged (done).` });
+      }
+
+      case "delete_workout": {
+        const { category, day_number } = args;
+        const existing = await storage.getDayByNumberAndCategory(day_number, category);
+        if (!existing) {
+          return JSON.stringify({ error: `${category} Day ${day_number} not found.` });
+        }
+        await storage.deleteDay(existing.id);
+        return JSON.stringify({ success: true, message: `${category} Day ${day_number} deleted.` });
+      }
+
+      case "view_workout": {
+        const { category, day_number } = args;
+        const day = await storage.getDayByNumberAndCategory(day_number, category);
+        if (!day) {
+          return JSON.stringify({ error: `${category} Day ${day_number} not found.` });
+        }
+        return JSON.stringify({ success: true, day, intensity: calcIntensity(day.exercises) });
+      }
+
+      case "view_all_workouts": {
+        const { category } = args;
+        const allDays = await storage.getDaysByCategory(category);
+        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+        return JSON.stringify({ success: true, category, total: sorted.length, days: sorted.map(d => ({ dayNumber: d.dayNumber, status: d.status, exercises: d.exercises, intensity: calcIntensity(d.exercises) })) });
+      }
+
+      case "get_stats": {
+        const homeDays = await storage.getDaysByCategory("home");
+        const gymDays = await storage.getDaysByCategory("gym");
+        const homeLogged = homeDays.filter(d => d.status === "Logged").length;
+        const gymLogged = gymDays.filter(d => d.status === "Logged").length;
+        const homeIntensity = homeDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
+        const gymIntensity = gymDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
+        const totalExercises = [...homeDays, ...gymDays].reduce((sum, d) => sum + d.exercises.length, 0);
+        return JSON.stringify({
+          success: true,
+          home: { totalDays: homeDays.length, logged: homeLogged, totalIntensity: homeIntensity },
+          gym: { totalDays: gymDays.length, logged: gymLogged, totalIntensity: gymIntensity },
+          overall: { totalDays: homeDays.length + gymDays.length, totalExercises, combinedIntensity: homeIntensity + gymIntensity },
+        });
+      }
+
+      case "get_intensity": {
+        const { category } = args;
+        const allDays = await storage.getDaysByCategory(category);
+        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+        const data = sorted.map(d => ({ dayNumber: d.dayNumber, intensity: calcIntensity(d.exercises) }));
+        return JSON.stringify({ success: true, category, data });
+      }
+
+      case "export_logs": {
+        const { category } = args;
+        const allDays = await storage.getDaysByCategory(category);
+        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+        return JSON.stringify({ success: true, category, total: sorted.length, days: sorted });
+      }
+
+      case "save_browser_memory": {
+        const { content } = args;
+        await storage.saveBrowserMemory(content);
+        return JSON.stringify({ success: true, message: "Browser memory saved. The web chat AI will now reference this in every conversation." });
+      }
+
+      case "view_browser_memory": {
+        const memory = await storage.getBrowserMemory();
+        return JSON.stringify({ success: true, memory: memory || "No browser memory set." });
+      }
+
+      case "delete_browser_memory": {
+        await storage.deleteBrowserMemory();
+        return JSON.stringify({ success: true, message: "Browser memory deleted." });
+      }
+
+      case "clear_ai_memory": {
+        await storage.clearChatMemory();
+        return JSON.stringify({ success: true, message: "Telegram AI conversation memory cleared." });
+      }
+
+      default:
+        return JSON.stringify({ error: `Unknown function: ${name}` });
+    }
+  } catch (err: any) {
+    return JSON.stringify({ error: err.message || "Function execution failed" });
+  }
+}
 
 export async function chatWithGeminiTelegram(userMessage: string): Promise<string> {
   try {
     const logsContext = await getAllLogsContext();
     const memory = await storage.getChatMemory();
 
-    const contents: { role: string; parts: { text: string }[] }[] = [];
+    const contents: any[] = [];
     let lastRole = "";
 
     for (const m of memory) {
@@ -37,10 +336,7 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
       if (role === lastRole && contents.length > 0) {
         contents[contents.length - 1].parts[0].text += "\n" + m.content;
       } else {
-        contents.push({
-          role,
-          parts: [{ text: m.content }],
-        });
+        contents.push({ role, parts: [{ text: m.content }] });
         lastRole = role;
       }
     }
@@ -48,23 +344,51 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
     if (lastRole === "user" && contents.length > 0) {
       contents[contents.length - 1].parts[0].text += "\n" + userMessage;
     } else {
-      contents.push({
-        role: "user",
-        parts: [{ text: userMessage }],
-      });
+      contents.push({ role: "user", parts: [{ text: userMessage }] });
     }
 
     await storage.addChatMemory("user", userMessage);
 
-    const response = await ai.models.generateContent({
+    let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${logsContext}`,
+        tools: [{ functionDeclarations }],
       },
     });
 
-    const responseText = response.text || "I couldn't generate a response.";
+    let maxIterations = 5;
+    while (maxIterations > 0) {
+      maxIterations--;
+      const candidate = response.candidates?.[0];
+      if (!candidate) break;
+
+      const parts = candidate.content?.parts || [];
+      const functionCallPart = parts.find((p: any) => p.functionCall);
+
+      if (!functionCallPart || !functionCallPart.functionCall) break;
+
+      const { name, args } = functionCallPart.functionCall;
+      log(`Gemini function call: ${name}(${JSON.stringify(args)})`, "gemini");
+
+      const result = await executeFunction(name, args || {});
+      log(`Function result: ${result.substring(0, 200)}`, "gemini");
+
+      contents.push({ role: "model", parts: [{ functionCall: { name, args: args || {} } }] });
+      contents.push({ role: "user", parts: [{ functionResponse: { name, response: JSON.parse(result) } }] });
+
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents,
+        config: {
+          systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${await getAllLogsContext()}`,
+          tools: [{ functionDeclarations }],
+        },
+      });
+    }
+
+    const responseText = response.text || "Done!";
     await storage.addChatMemory("model", responseText);
 
     return responseText;
@@ -77,6 +401,7 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
 export async function chatWithGeminiWeb(userMessage: string, sessionHistory: { role: string; content: string }[]): Promise<string> {
   try {
     const logsContext = await getAllLogsContext();
+    const browserMem = await storage.getBrowserMemory();
 
     const contents: { role: string; parts: { text: string }[] }[] = [];
     for (const m of sessionHistory) {
@@ -91,11 +416,16 @@ export async function chatWithGeminiWeb(userMessage: string, sessionHistory: { r
       parts: [{ text: userMessage }],
     });
 
+    let memoryContext = "";
+    if (browserMem) {
+      memoryContext = `\n\nIMPORTANT PERSISTENT INSTRUCTIONS FROM JOHN (always follow these):\n${browserMem}\n`;
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents,
       config: {
-        systemInstruction: `${SYSTEM_PROMPT}\n\nYou are chatting with a visitor on John's public workout tracking web app. Be friendly and helpful. Answer questions about John's workout progress, routines, and fitness journey based on the data. Keep responses short and engaging.\n\nCurrent workout data:\n${logsContext}`,
+        systemInstruction: `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You are chatting with a visitor on John's public workout tracking web app. Be friendly and helpful. Answer questions about John's workout progress, routines, and fitness journey based on the data. Keep responses short and engaging.${memoryContext}\n\nCurrent workout data:\n${logsContext}`,
       },
     });
 
@@ -114,7 +444,7 @@ export async function getGeminiComment(action: string, details: string): Promise
       model: "gemini-2.5-flash",
       contents: `John just performed this action: ${action}\nDetails: ${details}\n\nGive a short, motivating comment (2-3 sentences max). Be specific about what he did.`,
       config: {
-        systemInstruction: `${SYSTEM_PROMPT}\n\nWorkout data:\n${logsContext}`,
+        systemInstruction: `You are John's personal AI workout assistant. Be supportive and motivating. Keep it brief.\n\nWorkout data:\n${logsContext}`,
       },
     });
 

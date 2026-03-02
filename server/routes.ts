@@ -202,7 +202,6 @@ export async function registerRoutes(
     }
   });
 
-  // Start Telegram bot
   startTelegramBot();
 
   return httpServer;
