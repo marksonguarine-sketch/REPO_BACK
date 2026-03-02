@@ -16,7 +16,8 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 - **Telegram bot** - 20 commands for CRUD + status + AI chat + browser memory
 - **Gemini AI (Telegram)** - Function calling with 13 declared functions for natural language workout management, persistent chat memory
 - **Gemini AI (Web)** - Conversational AI with session history + persistent browser memory from DB
-- **Web chat widget** - Floating chat bubble with AI assistant for visitors
+- **Web chat widget** - Enhanced floating chat with glassmorphic UI, quick prompts, message counter, scroll indicator, animated transitions
+- **Chat popup** - "Try my web chat AI!" cursive handwritten popup with arrow, auto-dismiss on click or 5min
 - **Visitor tracking** - Fingerprint-based unique visitor detection, geo-location, referrer detection
 - **TG notifications** - New visitor alerts + web chat message forwarding to owner
 - **Web is read-only** - All editing done via Telegram bot (or Gemini natural language in TG)
@@ -64,6 +65,13 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 - DELETE /api/days/:id - Delete day (protected)
 - POST /api/visitor - Track visitor (fingerprint, referrer)
 - POST /api/chat - Web AI chat (message, history)
+- GET /health - Healthcheck endpoint
+
+## Caching
+- API responses: no-cache, no-store, must-revalidate headers
+- HTML: no-cache headers
+- Static assets: 1h maxAge
+
 ## Design
 - Dark glassmorphic: --bg:#0b0f17, --accent:#7c5cff, --accent2:#38bdf8
 - Glass panels with backdrop-blur, purple/cyan gradient accents
