@@ -1,7 +1,8 @@
 import type { Handler } from "@netlify/functions";
 import { storage } from "../../server/storage";
+import { config } from "../../server/config";
 
-const OWNER_ID = 7474049767;
+const OWNER_ID = config.telegramOwnerId;
 
 function esc(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

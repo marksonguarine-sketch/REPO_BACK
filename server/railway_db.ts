@@ -1,7 +1,8 @@
-import { MongoClient, Db, Collection } from "mongodb";
+import { MongoClient, Db, Collection, type Document } from "mongodb";
+import { config, requireEnv } from "./config";
 
-const MONGODB_URI = "mongodb://mongo:StUaVOddeiqFbDsJuEpjzsIGiHhtepbY@gondola.proxy.rlwy.net:33565";
-const DB_NAME = "johns_lockin_logs";
+const MONGODB_URI = requireEnv(config.mongoUri, "MONGODB_URI");
+const DB_NAME = config.mongoDbName;
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
