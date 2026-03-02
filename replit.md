@@ -24,8 +24,9 @@ Workout logging application for tracking home and gym workouts (D1-D15+). Featur
 - **Web is read-only** - All editing done via Telegram bot (or Gemini natural language in TG)
 - **Write endpoints protected** - POST/PUT/DELETE require x-bot-secret header
 - **Backup/Restore** - `/dl_backup` exports all data as JSON, upload .json to restore
-- **Reminder system** - AI-driven reminders via natural language, 30-second check interval
+- **Reminder system** - AI-driven reminders via natural language, 3-second polling, precise Unix timestamps, recurring support, numbered list display, edit/delete by number, atomic deduplication
 - **Image analysis** - Send photos to TG bot for Gemini AI analysis
+- **Image generation** - `/create_image [prompt]` using `gemini-2.0-flash-exp` model with responseModalities, supports reference images via photo caption
 
 ## Database (MongoDB - Railway)
 Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `backup_logs`, `counters`

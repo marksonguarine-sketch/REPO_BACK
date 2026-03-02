@@ -1,7 +1,9 @@
 import TelegramBot from "node-telegram-bot-api";
 import { storage } from "./storage";
 import { log } from "./index";
-import { chatWithGeminiTelegram, getGeminiComment, analyzeImageWithGemini } from "./gemini";
+import { chatWithGeminiTelegram, getGeminiComment, analyzeImageWithGemini, generateImageWithGemini } from "./gemini";
+import * as https from "https";
+import * as http from "http";
 
 const OWNER_ID = 7474049767;
 
@@ -18,6 +20,8 @@ interface UserState {
   dayNumber?: number;
   dayId?: number;
 }
+
+const pendingImageGen = new Map<number, { prompt: string; waitingForPhoto: boolean }>();
 
 const userStates = new Map<number, UserState>();
 
@@ -158,6 +162,7 @@ export function startTelegramBot() {
     { command: "save_browser_memory", description: "Save web chat AI memory" },
     { command: "dl_backup", description: "Download full data backup" },
     { command: "reminders", description: "List pending reminders" },
+    { command: "create_image", description: "Generate an image with AI" },
   ]).catch(err => log(`Failed to set commands: ${err.message}`, "telegram"));
 
   bot.onText(/\/start/, async (msg) => {
@@ -232,8 +237,20 @@ Send a photo \u2014 AI will analyze it
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 /dl_backup \u2014 Download full data backup as JSON
 Upload a .json file \u2014 Restore from backup
-/reminders \u2014 List pending reminders
-Ask AI: "remind me in 5 min to drink water"
+/reminders \u2014 List all pending reminders (numbered)
+
+<b>Reminder AI Commands:</b>
+\u2022 "remind me in 10 seconds to drink water"
+\u2022 "remind me every day at 8 PM to workout"
+\u2022 "display reminders" \u2014 shows numbered list
+\u2022 "delete number 3" \u2014 deletes 3rd reminder
+\u2022 "change number 2 to every hour"
+\u2022 "edit reminder #5 message to take vitamins"
+
+\u{1F3A8} <b>IMAGE GENERATION</b>
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+/create_image [prompt] \u2014 Generate AI image
+Send photo with caption /create_image [prompt] \u2014 Use reference image
 
 \u{1F4AC} <b>NATURAL LANGUAGE</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -275,9 +292,10 @@ Just type naturally! e.g.:
 /save_browser_memory
 /dl_backup
 /reminders
+/create_image [prompt]
 
 <i>Or just type naturally \u2014 AI understands!</i>
-<i>Send photos for AI analysis!</i>
+<i>Send photos for AI analysis or with /create_image caption!</i>
 <i>Upload .json files to restore backups!</i>`;
     await bot.sendMessage(chatId, commandsList, { parse_mode: "HTML" });
   });
@@ -337,13 +355,60 @@ Just type naturally! e.g.:
     if (reminders.length === 0) {
       return bot.sendMessage(chatId, "\u{1F4ED} No pending reminders. Ask the AI to set one!");
     }
-    let text = `\u23F0 <b>Pending Reminders</b>\n\n`;
-    for (const r of reminders) {
-      const timeStr = new Date(r.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-      text += `<b>#${r.id}</b> — ${esc(r.message)}\n\u{1F552} ${timeStr}\n\n`;
-    }
-    text += `<i>To delete: ask AI "delete reminder #ID"</i>`;
+    let text = `\u23F0 <b>Pending Reminders (${reminders.length})</b>\n\n`;
+    reminders.forEach((r: any, idx: number) => {
+      const timeStr = new Date(r.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+      const recurLabel = r.isRecurring ? ` \u{1F501} recurring` : "";
+      let intervalLabel = "";
+      if (r.isRecurring && r.intervalMs) {
+        if (r.intervalMs < 60000) intervalLabel = ` (every ${Math.round(r.intervalMs / 1000)}s)`;
+        else if (r.intervalMs < 3600000) intervalLabel = ` (every ${Math.round(r.intervalMs / 60000)} min)`;
+        else if (r.intervalMs < 86400000) intervalLabel = ` (every ${Math.round(r.intervalMs / 3600000)} hr)`;
+        else intervalLabel = ` (every ${Math.round(r.intervalMs / 86400000)} day)`;
+      }
+      text += `<b>${idx + 1}.</b> ${esc(r.message)}\n   \u{1F552} ${timeStr}${recurLabel}${intervalLabel}\n   <i>ID: #${r.id}</i>\n\n`;
+    });
+    text += `<i>Commands:\n\u2022 "delete number X" or "delete reminder #ID"\n\u2022 "change number X to every hour"\n\u2022 "edit reminder #ID message to ..."\n(Use /ai prefix)</i>`;
     await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+  });
+
+  bot.onText(/\/create_image(.*)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    if (!isOwner(chatId)) return;
+    const prompt = match![1]?.trim();
+
+    if (!prompt) {
+      await bot.sendMessage(chatId, "\u{1F3A8} <b>Image Generator</b>\n\nUsage:\n<code>/create_image [your prompt]</code>\n\nYou can also send a photo with the caption <code>/create_image [prompt]</code> to use it as a reference.\n\nExample:\n<code>/create_image a futuristic gym with neon lights</code>", { parse_mode: "HTML" });
+      return;
+    }
+
+    pendingImageGen.set(chatId, { prompt, waitingForPhoto: false });
+    await bot.sendChatAction(chatId, "upload_photo");
+
+    try {
+      const result = await generateImageWithGemini(prompt);
+      if (!result) {
+        await bot.sendMessage(chatId, "\u274C Image generation failed. Try a different prompt.");
+        return;
+      }
+
+      if (result.text) {
+        const formatted = formatGeminiResponse(result.text);
+        await bot.sendMessage(chatId, formatted, { parse_mode: "HTML" });
+      }
+
+      if (result.imageBuffer) {
+        await bot.sendPhoto(chatId, result.imageBuffer, { caption: `\u{1F3A8} Generated: ${prompt}` });
+        log(`Image generated for prompt: ${prompt}`, "telegram");
+      } else {
+        await bot.sendMessage(chatId, "\u26A0\uFE0F AI responded but didn't generate an image. Try rephrasing your prompt.");
+      }
+    } catch (err: any) {
+      await bot.sendMessage(chatId, `\u274C Image generation error: ${esc(err.message)}`);
+      log(`Image generation error: ${err.message}`, "telegram");
+    } finally {
+      pendingImageGen.delete(chatId);
+    }
   });
 
   bot.onText(/\/home_status_updated(\d+)/, async (msg, match) => {
@@ -713,9 +778,7 @@ Keep going, John! \u{1F525}`;
     if (!isOwner(chatId)) return;
 
     const photo = msg.photo![msg.photo!.length - 1];
-    const caption = msg.caption || "Analyze this image";
-
-    await bot.sendChatAction(chatId, "typing");
+    const caption = msg.caption || "";
 
     try {
       const fileInfo = await bot.getFile(photo.file_id);
@@ -727,7 +790,30 @@ Keep going, John! \u{1F525}`;
       const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
       const mimeType = mimeMap[ext] || "image/jpeg";
 
-      const aiResponse = await analyzeImageWithGemini(buffer, mimeType, caption);
+      if (caption.startsWith("/create_image")) {
+        const prompt = caption.replace("/create_image", "").trim() || "Transform this image creatively";
+        await bot.sendChatAction(chatId, "upload_photo");
+
+        const result = await generateImageWithGemini(prompt, { buffer, mimeType });
+        if (!result) {
+          await bot.sendMessage(chatId, "\u274C Image generation failed. Try a different prompt.");
+          return;
+        }
+        if (result.text) {
+          const formatted = formatGeminiResponse(result.text);
+          await bot.sendMessage(chatId, formatted, { parse_mode: "HTML" });
+        }
+        if (result.imageBuffer) {
+          await bot.sendPhoto(chatId, result.imageBuffer, { caption: `\u{1F3A8} Generated: ${prompt}` });
+          log(`Image generated with reference for prompt: ${prompt}`, "telegram");
+        } else {
+          await bot.sendMessage(chatId, "\u26A0\uFE0F AI responded but didn't generate an image. Try rephrasing.");
+        }
+        return;
+      }
+
+      await bot.sendChatAction(chatId, "typing");
+      const aiResponse = await analyzeImageWithGemini(buffer, mimeType, caption || "Analyze this image");
       const formatted = formatGeminiResponse(aiResponse);
       const chunks = splitMessage(formatted);
       for (const chunk of chunks) {

@@ -72,7 +72,15 @@ REMINDER RULES:
 - For "remind me in X days": trigger_at_ms = current_timestamp + (X * 86400 * 1000)
 - For "remind me at 8 PM": calculate the ms timestamp for the next occurrence of 8 PM Philippine time
 - For recurring reminders like "remind me every day at 8 PM", set is_recurring to true with interval_ms = 86400000 (24h in ms)
-- Be PRECISE with timing — no approximations`;
+- Be PRECISE with timing — no approximations
+
+REMINDER MANAGEMENT:
+- When user says "display reminders", "show reminders", "list reminders" — call list_reminders and display as a NUMBERED LIST (1., 2., 3., etc.)
+- When user says "delete number X" — first call list_reminders to identify the reminder at position X, then call delete_reminder with its actual ID
+- When user says "change number X to every hour" — first call list_reminders, then call update_reminder with the ID at position X
+- When user says "edit reminder #X" — call update_reminder with the specified ID
+- You can update: message text, trigger time, make recurring/non-recurring, change interval
+- interval_ms values: 1000=1sec, 60000=1min, 3600000=1hr, 86400000=1day, 604800000=1week, 2592000000=30days`;
 }
 
 const functionDeclarations = [
@@ -218,16 +226,31 @@ const functionDeclarations = [
   },
   {
     name: "list_reminders",
-    description: "List all pending (unsent) reminders.",
+    description: "List all pending (unsent) reminders in a numbered list format. Always call this when the user asks to display, show, or list reminders.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "delete_reminder",
-    description: "Delete a specific reminder by ID.",
+    description: "Delete a specific reminder by its list number. When user says 'delete number 4', first call list_reminders to get the list, then delete the reminder at position 4 using its actual ID.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        reminder_id: { type: Type.INTEGER, description: "The reminder ID to delete" },
+        reminder_id: { type: Type.INTEGER, description: "The actual reminder ID to delete (from list_reminders result)" },
+      },
+      required: ["reminder_id"],
+    },
+  },
+  {
+    name: "update_reminder",
+    description: "Update an existing reminder. Can change the message, trigger time, and/or make it recurring/non-recurring. Use list_reminders first to get the reminder IDs.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        reminder_id: { type: Type.INTEGER, description: "The actual reminder ID to update" },
+        message: { type: Type.STRING, description: "New reminder message (optional, keep existing if not changing)" },
+        trigger_at_ms: { type: Type.NUMBER, description: "New trigger Unix timestamp in milliseconds (optional)" },
+        is_recurring: { type: Type.BOOLEAN, description: "Set to true for recurring, false for one-time (optional)" },
+        interval_ms: { type: Type.NUMBER, description: "New interval in ms for recurring reminders. Use: 1000=1sec, 60000=1min, 3600000=1hr, 86400000=1day, 604800000=1week (optional)" },
       },
       required: ["reminder_id"],
     },
@@ -243,6 +266,15 @@ const functionDeclarations = [
     parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
+
+function formatInterval(ms: number): string {
+  if (ms <= 0) return "none";
+  if (ms < 60000) return `${Math.round(ms / 1000)} seconds`;
+  if (ms < 3600000) return `${Math.round(ms / 60000)} minutes`;
+  if (ms < 86400000) return `${Math.round(ms / 3600000)} hours`;
+  if (ms < 604800000) return `${Math.round(ms / 86400000)} days`;
+  return `${Math.round(ms / 604800000)} weeks`;
+}
 
 function calcIntensity(exercises: string[]): number {
   let score = 0;
@@ -388,13 +420,41 @@ async function executeFunction(name: string, args: any): Promise<string> {
 
       case "list_reminders": {
         const reminders = await storage.getAllReminders();
-        return JSON.stringify({ success: true, reminders: reminders.map((r: any) => ({ id: r.id, message: r.message, triggerAt: r.triggerAt })) });
+        const numbered = reminders.map((r: any, idx: number) => {
+          const timeStr = new Date(r.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+          return {
+            listNumber: idx + 1,
+            id: r.id,
+            message: r.message,
+            triggerAt: timeStr,
+            isRecurring: r.isRecurring || false,
+            intervalMs: r.intervalMs || 0,
+            intervalHuman: r.isRecurring ? formatInterval(r.intervalMs || 0) : "one-time",
+          };
+        });
+        return JSON.stringify({ success: true, total: numbered.length, reminders: numbered, instruction: "Display these as a numbered list. When user refers to 'number X', use the id field of item at that listNumber position." });
       }
 
       case "delete_reminder": {
         const { reminder_id } = args;
         await storage.deleteReminder(reminder_id);
-        return JSON.stringify({ success: true, message: `Reminder ${reminder_id} deleted.` });
+        return JSON.stringify({ success: true, message: `Reminder #${reminder_id} deleted successfully.` });
+      }
+
+      case "update_reminder": {
+        const { reminder_id, message, trigger_at_ms, is_recurring, interval_ms } = args;
+        const updates: any = {};
+        if (message !== undefined) updates.message = message;
+        if (trigger_at_ms !== undefined) updates.triggerAt = new Date(trigger_at_ms);
+        if (is_recurring !== undefined) updates.isRecurring = is_recurring;
+        if (interval_ms !== undefined) updates.intervalMs = interval_ms;
+        if (is_recurring === false) {
+          updates.intervalMs = 0;
+        }
+        await storage.updateReminder(reminder_id, updates);
+        const updated = await storage.getReminderById(reminder_id);
+        const timeStr = updated ? new Date(updated.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }) : "unknown";
+        return JSON.stringify({ success: true, message: `Reminder #${reminder_id} updated.`, updated: { id: reminder_id, message: updated?.message, triggerAt: timeStr, isRecurring: updated?.isRecurring, intervalMs: updated?.intervalMs } });
       }
 
       case "create_backup": {
@@ -554,6 +614,46 @@ export async function getGeminiComment(action: string, details: string): Promise
   } catch (err: any) {
     log(`Gemini comment error: ${err.message}`, "gemini");
     return "";
+  }
+}
+
+export async function generateImageWithGemini(prompt: string, referenceImage?: { buffer: Buffer; mimeType: string }): Promise<{ text?: string; imageBuffer?: Buffer } | null> {
+  try {
+    const IMAGE_MODEL = "gemini-2.0-flash-exp";
+
+    const parts: any[] = [];
+    parts.push({ text: prompt });
+
+    if (referenceImage) {
+      const base64 = referenceImage.buffer.toString("base64");
+      parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: base64 } });
+    }
+
+    const response = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: [{ role: "user", parts }],
+      config: {
+        responseModalities: ["TEXT", "IMAGE"],
+      } as any,
+    });
+
+    const result: { text?: string; imageBuffer?: Buffer } = {};
+    const candidate = response.candidates?.[0];
+    if (!candidate?.content?.parts) return null;
+
+    for (const part of candidate.content.parts) {
+      if ((part as any).text) {
+        result.text = (part as any).text;
+      } else if ((part as any).inlineData) {
+        const imageData = (part as any).inlineData.data;
+        result.imageBuffer = Buffer.from(imageData, "base64");
+      }
+    }
+
+    return result;
+  } catch (err: any) {
+    log(`Gemini image generation error: ${err.message}`, "gemini");
+    return null;
   }
 }
 

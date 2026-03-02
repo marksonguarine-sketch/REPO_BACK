@@ -282,6 +282,18 @@ export class MongoStorage implements IStorage {
     }));
   }
 
+  async updateReminder(id: number, updates: Partial<{ message: string; triggerAt: Date; isRecurring: boolean; intervalMs: number }>) {
+    const col = await getCollection<MongoReminder>("reminders");
+    await col.updateOne({ id }, { $set: updates });
+  }
+
+  async getReminderById(id: number) {
+    const col = await getCollection<MongoReminder>("reminders");
+    const doc = await col.findOne({ id });
+    if (!doc) return null;
+    return { id: doc.id, message: doc.message, triggerAt: doc.triggerAt, sent: doc.sent, isRecurring: doc.isRecurring || false, intervalMs: doc.intervalMs || 0, createdAt: doc.createdAt };
+  }
+
   async deleteReminder(id: number) {
     const col = await getCollection<MongoReminder>("reminders");
     await col.deleteOne({ id });

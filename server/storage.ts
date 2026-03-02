@@ -19,6 +19,8 @@ export interface IStorage {
   getDueReminders(): Promise<any[]>;
   markReminderSent(id: number): Promise<void>;
   rescheduleRecurringReminder(id: number, nextTriggerAt: Date): Promise<void>;
+  updateReminder(id: number, updates: Partial<{ message: string; triggerAt: Date; isRecurring: boolean; intervalMs: number }>): Promise<void>;
+  getReminderById(id: number): Promise<any | null>;
   getAllReminders(): Promise<any[]>;
   deleteReminder(id: number): Promise<void>;
 }
