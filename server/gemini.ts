@@ -30,18 +30,29 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
     const memory = await storage.getChatMemory();
 
     const contents: { role: string; parts: { text: string }[] }[] = [];
+    let lastRole = "";
 
     for (const m of memory) {
-      contents.push({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }],
-      });
+      const role = m.role === "user" ? "user" : "model";
+      if (role === lastRole && contents.length > 0) {
+        contents[contents.length - 1].parts[0].text += "\n" + m.content;
+      } else {
+        contents.push({
+          role,
+          parts: [{ text: m.content }],
+        });
+        lastRole = role;
+      }
     }
 
-    contents.push({
-      role: "user",
-      parts: [{ text: userMessage }],
-    });
+    if (lastRole === "user" && contents.length > 0) {
+      contents[contents.length - 1].parts[0].text += "\n" + userMessage;
+    } else {
+      contents.push({
+        role: "user",
+        parts: [{ text: userMessage }],
+      });
+    }
 
     await storage.addChatMemory("user", userMessage);
 
