@@ -1,8 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { storage } from "./storage";
 import { log } from "./log";
+import { config, requireEnv } from "./config";
 
-const ai = new GoogleGenAI({ apiKey: "AIzaSyDlFlj9C9gzOgwe9Ic-TIieK5I6FHW1Ek8" });
+const ai = new GoogleGenAI({ apiKey: requireEnv(config.geminiApiKey, "GEMINI_API_KEY") });
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 

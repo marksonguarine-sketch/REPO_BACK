@@ -10,7 +10,7 @@ function json(statusCode: number, body: any) {
       "Content-Type": "application/json",
       "Cache-Control": "no-cache, no-store, must-revalidate",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, x-bot-secret",
+      "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     },
     body: JSON.stringify(body),
@@ -18,8 +18,13 @@ function json(statusCode: number, body: any) {
 }
 
 function getPath(event: HandlerEvent): string {
-  const raw = event.path.replace("/.netlify/functions/api", "");
-  return raw || "/";
+  const path = event.path || "/";
+  const prefixes = ["/.netlify/functions/api", "/api"];
+  for (const prefix of prefixes) {
+    if (path === prefix) return "/";
+    if (path.startsWith(`${prefix}/`)) return path.slice(prefix.length);
+  }
+  return path;
 }
 
 function parseBody(event: HandlerEvent): any {
@@ -31,18 +36,13 @@ function parseBody(event: HandlerEvent): any {
   }
 }
 
-function requireBotSecret(event: HandlerEvent): boolean {
-  const secret = event.headers["x-bot-secret"];
-  return secret === process.env.SESSION_SECRET;
-}
-
 const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) => {
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type, x-bot-secret",
+        "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       },
       body: "",
@@ -74,7 +74,6 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
 
       if (method === "PUT") {
-        if (!requireBotSecret(event)) return json(403, { message: "Forbidden" });
         const body = parseBody(event);
         const day = await storage.updateDay(id, body);
         if (!day) return json(404, { message: "Day not found" });
@@ -82,7 +81,6 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
       }
 
       if (method === "DELETE") {
-        if (!requireBotSecret(event)) return json(403, { message: "Forbidden" });
         const day = await storage.getDay(id);
         if (!day) return json(404, { message: "Day not found" });
         await storage.deleteDay(id);
@@ -91,7 +89,6 @@ const handler: Handler = async (event: HandlerEvent, _context: HandlerContext) =
     }
 
     if (path === "/days" && method === "POST") {
-      if (!requireBotSecret(event)) return json(403, { message: "Forbidden" });
       const body = parseBody(event);
       const day = await storage.createDay(body);
       return json(201, day);
