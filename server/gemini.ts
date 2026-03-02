@@ -419,7 +419,7 @@ export async function chatWithGeminiTelegram(userMessage: string, imageParts?: a
       contents,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${logsContext}`,
-        tools: [{ functionDeclarations }, { googleSearch: {} }],
+        tools: [{ functionDeclarations }],
       },
     });
 
@@ -448,7 +448,7 @@ export async function chatWithGeminiTelegram(userMessage: string, imageParts?: a
         contents,
         config: {
           systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${await getAllLogsContext()}`,
-          tools: [{ functionDeclarations }, { googleSearch: {} }],
+          tools: [{ functionDeclarations }],
         },
       });
     }

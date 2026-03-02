@@ -48,7 +48,8 @@ function ChatPromptPopup({ onDismiss }: { onDismiss: () => void }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.8 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
-      className="fixed bottom-24 right-4 z-[60] pointer-events-none select-none"
+      className="pointer-events-none select-none"
+      style={{ position: "fixed", bottom: "96px", right: "16px", left: "auto", zIndex: 10000 }}
       data-testid="chat-prompt-popup"
     >
       <div className="relative">
@@ -417,7 +418,8 @@ export function ChatWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.85 }}
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            className="chat-container fixed bottom-24 right-4 w-[380px] max-w-[calc(100vw-32px)] h-[520px] max-h-[72vh] rounded-3xl overflow-hidden z-50 flex flex-col"
+            className="chat-container w-[380px] max-w-[calc(100vw-32px)] h-[520px] max-h-[72vh] rounded-3xl overflow-hidden flex flex-col"
+            style={{ position: "fixed", bottom: "96px", right: "16px", left: "auto", zIndex: 9998 }}
             data-testid="chat-widget"
           >
             <div className="chat-header relative flex items-center justify-between px-5 py-3.5">
@@ -570,7 +572,8 @@ export function ChatWidget() {
 
       <motion.button
         onClick={() => { setIsOpen(!isOpen); setShowPrompt(false); }}
-        className="chat-fab fixed bottom-6 right-4 w-14 h-14 rounded-full z-50 flex items-center justify-center"
+        className="chat-fab w-14 h-14 rounded-full flex items-center justify-center"
+        style={{ position: "fixed", bottom: "24px", right: "16px", left: "auto", zIndex: 9999 }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         data-testid="button-open-chat"
