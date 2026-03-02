@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { storage } from "./storage";
-import { log } from "./index";
+import { log } from "./log";
 import { chatWithGeminiTelegram, getGeminiComment, analyzeImageWithGemini, generateImageWithGemini } from "./gemini";
 import * as https from "https";
 import * as http from "http";
@@ -94,8 +94,21 @@ export async function sendOwnerNotification(text: string) {
   if (botInstance && OWNER_ID) {
     try {
       await botInstance.sendMessage(OWNER_ID, text, { parse_mode: "HTML" });
+      return;
     } catch (err: any) {
-      log(`Failed to send notification: ${err.message}`, "telegram");
+      log(`Failed to send notification via bot: ${err.message}`, "telegram");
+    }
+  }
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (token && OWNER_ID) {
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: OWNER_ID, text, parse_mode: "HTML" }),
+      });
+    } catch (err: any) {
+      console.error(`Failed to send TG notification via HTTP: ${err.message}`);
     }
   }
 }
@@ -947,4 +960,489 @@ Keep going, John! \u{1F525}`;
   });
 
   return bot;
+}
+
+const webhookStates = new Map<number, UserState & { backupData?: any }>();
+
+async function tgApi(method: string, body: any) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json() as any;
+}
+
+async function tgSend(chatId: number, text: string, opts?: any) {
+  return tgApi("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", ...opts });
+}
+
+async function tgSendPhoto(chatId: number, photoBuffer: Buffer, caption?: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  const formData = new FormData();
+  formData.append("chat_id", String(chatId));
+  formData.append("photo", new Blob([photoBuffer]), "image.png");
+  if (caption) formData.append("caption", caption);
+  await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: "POST", body: formData });
+}
+
+async function tgAction(chatId: number, action: string) {
+  return tgApi("sendChatAction", { chat_id: chatId, action });
+}
+
+async function tgGetFile(fileId: string): Promise<string | null> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  const res = await tgApi("getFile", { file_id: fileId });
+  if (res?.result?.file_path) {
+    return `https://api.telegram.org/file/bot${token}/${res.result.file_path}`;
+  }
+  return null;
+}
+
+async function tgAnswerCallback(callbackQueryId: string) {
+  return tgApi("answerCallbackQuery", { callback_query_id: callbackQueryId });
+}
+
+async function tgSendDocument(chatId: number, content: string, filename: string, caption?: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  const formData = new FormData();
+  formData.append("chat_id", String(chatId));
+  formData.append("document", new Blob([content], { type: "application/json" }), filename);
+  if (caption) formData.append("caption", caption);
+  await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: formData });
+}
+
+export async function handleTelegramWebhook(update: any) {
+  try {
+    if (update.callback_query) {
+      const query = update.callback_query;
+      const chatId = query.message?.chat?.id;
+      if (!chatId || !isOwner(chatId)) return;
+      const data = query.data;
+
+      if (data === "cancel_action") {
+        webhookStates.delete(chatId);
+        await tgSend(chatId, "\u274C Action cancelled.");
+        await tgAnswerCallback(query.id);
+        return;
+      }
+
+      if (data === "confirm_restore") {
+        const state = webhookStates.get(chatId) as any;
+        if (state?.action === "restore_pending" && state.backupData) {
+          await tgAction(chatId, "typing");
+          await storage.importAllData(state.backupData);
+          await tgSend(chatId, "\u2705 <b>Backup restored!</b>\n\nAll data has been replaced with the backup contents.");
+          webhookStates.delete(chatId);
+        }
+        await tgAnswerCallback(query.id);
+        return;
+      }
+
+      if (data?.startsWith("view_")) {
+        const cat = data.replace("view_", "");
+        const days = await storage.getDaysByCategory(cat);
+        if (days.length === 0) {
+          await tgSend(chatId, `\u{1F4ED} No ${cat} logs yet.`);
+        } else {
+          let text = `\u{1F4CB} <b>${cat === "home" ? "Home" : "Gym"} Workout Logs</b>\n\n`;
+          for (const d of days) {
+            text += formatDayLog(d) + "\n";
+          }
+          const chunks = splitMessage(text);
+          for (const chunk of chunks) {
+            await tgSend(chatId, chunk);
+          }
+        }
+        await tgAnswerCallback(query.id);
+        return;
+      }
+
+      if (data?.startsWith("confirm_update_")) {
+        const parts = data.replace("confirm_update_", "").split("_");
+        const cat = parts[0];
+        const dayNum = parseInt(parts[1]);
+        const existing = await storage.getDayByNumberAndCategory(dayNum, cat);
+        if (existing) {
+          webhookStates.set(chatId, { action: "update", category: cat, dayNumber: dayNum, dayId: existing.id });
+          await tgSend(chatId, `\u{1F4DD} Send the updated exercises for <b>${cat === "home" ? "Home" : "Gym"} Day ${dayNum}</b>\n\n<i>One exercise per line</i>`);
+        }
+        await tgAnswerCallback(query.id);
+        return;
+      }
+
+      if (data?.startsWith("delete_confirm_")) {
+        const parts = data.replace("delete_confirm_", "").split("_");
+        const cat = parts[0];
+        const dayNum = parseInt(parts[1]);
+        const existing = await storage.getDayByNumberAndCategory(dayNum, cat);
+        if (existing) {
+          await storage.deleteDay(existing.id);
+          await tgSend(chatId, `\u{1F5D1}\uFE0F <b>${cat === "home" ? "Home" : "Gym"} Day ${dayNum}</b> deleted.`);
+        }
+        await tgAnswerCallback(query.id);
+        return;
+      }
+
+      await tgAnswerCallback(query.id);
+      return;
+    }
+
+    const msg = update.message;
+    if (!msg) return;
+    const chatId = msg.chat?.id;
+    if (!chatId || !isOwner(chatId)) {
+      if (chatId) await tgSend(chatId, "\u26D4 Access denied. This bot is private.");
+      return;
+    }
+
+    if (msg.photo) {
+      const photo = msg.photo[msg.photo.length - 1];
+      const caption = msg.caption || "";
+      const fileUrl = await tgGetFile(photo.file_id);
+      if (!fileUrl) return;
+
+      const response = await fetch(fileUrl);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const ext = fileUrl.split(".").pop()?.toLowerCase() || "jpg";
+      const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+      const mimeType = mimeMap[ext] || "image/jpeg";
+
+      if (caption.startsWith("/create_image")) {
+        const prompt = caption.replace("/create_image", "").trim() || "Transform this image creatively";
+        await tgAction(chatId, "upload_photo");
+        const result = await generateImageWithGemini(prompt, { buffer, mimeType });
+        if (!result) {
+          await tgSend(chatId, "\u274C Image generation failed.");
+          return;
+        }
+        if (result.text) await tgSend(chatId, formatGeminiResponse(result.text));
+        if (result.imageBuffer) await tgSendPhoto(chatId, result.imageBuffer, `\u{1F3A8} Generated: ${prompt}`);
+        else await tgSend(chatId, "\u26A0\uFE0F AI responded but didn't generate an image.");
+        return;
+      }
+
+      await tgAction(chatId, "typing");
+      const aiResponse = await analyzeImageWithGemini(buffer, mimeType, caption || "Analyze this image");
+      const formatted = formatGeminiResponse(aiResponse);
+      const chunks = splitMessage(formatted);
+      for (const chunk of chunks) {
+        await tgSend(chatId, chunk);
+      }
+      return;
+    }
+
+    if (msg.document) {
+      const doc = msg.document;
+      if (!doc.file_name?.endsWith(".json")) return;
+      await tgAction(chatId, "typing");
+      const fileUrl = await tgGetFile(doc.file_id);
+      if (!fileUrl) return;
+      const response = await fetch(fileUrl);
+      const text = await response.text();
+      const parsed = JSON.parse(text);
+      if (!parsed.data || !parsed.exportedAt) {
+        await tgSend(chatId, "\u274C Not a valid backup file.");
+        return;
+      }
+      const dataKeys = Object.keys(parsed.data);
+      const summary = dataKeys.map((k: string) => `${k}: ${Array.isArray(parsed.data[k]) ? parsed.data[k].length : "?"} records`).join("\n");
+      webhookStates.set(chatId, { action: "restore_pending", backupData: parsed.data } as any);
+      await tgSend(chatId, `\u{1F4E6} <b>Backup file detected</b>\n\nExported: ${parsed.exportedAt}\nContents:\n<code>${summary}</code>\n\n\u26A0\uFE0F This will <b>replace all current data</b>. Continue?`, {
+        reply_markup: { inline_keyboard: [[{ text: "\u2705 Yes, restore", callback_data: "confirm_restore" }, { text: "\u274C Cancel", callback_data: "cancel_action" }]] },
+      });
+      return;
+    }
+
+    const text = msg.text;
+    if (!text) return;
+
+    if (text.startsWith("/start")) {
+      await tgSend(chatId, `\u{1F3CB}\uFE0F <b>Welcome to John's Lock-In Bot!</b>\n\nYour personal workout log manager.\nUse /help to see all available commands.\n\n\u{1F4AA} Keep grinding!`);
+      return;
+    }
+
+    const saveHomeMatch = text.match(/^\/save_home_d(\d+)/);
+    if (saveHomeMatch) {
+      const dayNum = parseInt(saveHomeMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "home");
+      if (existing) {
+        await tgSend(chatId, `\u26A0\uFE0F Home Day ${dayNum} already exists. Use /update_d${dayNum}_home to update.`);
+        return;
+      }
+      webhookStates.set(chatId, { action: "save", category: "home", dayNumber: dayNum });
+      await tgSend(chatId, `\u{1F4DD} Send exercises for <b>Home Day ${dayNum}</b>\n\n<i>One exercise per line</i>`);
+      return;
+    }
+
+    const saveGymMatch = text.match(/^\/save_gym_d(\d+)/);
+    if (saveGymMatch) {
+      const dayNum = parseInt(saveGymMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "gym");
+      if (existing) {
+        await tgSend(chatId, `\u26A0\uFE0F Gym Day ${dayNum} already exists. Use /update_d${dayNum}_gym to update.`);
+        return;
+      }
+      webhookStates.set(chatId, { action: "save", category: "gym", dayNumber: dayNum });
+      await tgSend(chatId, `\u{1F4DD} Send exercises for <b>Gym Day ${dayNum}</b>\n\n<i>One exercise per line</i>`);
+      return;
+    }
+
+    const updateHomeMatch = text.match(/^\/update_d(\d+)_home/);
+    if (updateHomeMatch) {
+      const dayNum = parseInt(updateHomeMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "home");
+      if (!existing) {
+        await tgSend(chatId, `\u274C Home Day ${dayNum} not found.`);
+        return;
+      }
+      await tgSend(chatId, `\u{1F4C5} Current <b>Home Day ${dayNum}</b>:\n${formatDayLog(existing)}\n\n\u{1F504} Want to update?`, {
+        reply_markup: { inline_keyboard: [[{ text: "\u2705 Yes", callback_data: `confirm_update_home_${dayNum}` }, { text: "\u274C Cancel", callback_data: "cancel_action" }]] },
+      });
+      return;
+    }
+
+    const updateGymMatch = text.match(/^\/update_d(\d+)_gym/);
+    if (updateGymMatch) {
+      const dayNum = parseInt(updateGymMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "gym");
+      if (!existing) {
+        await tgSend(chatId, `\u274C Gym Day ${dayNum} not found.`);
+        return;
+      }
+      await tgSend(chatId, `\u{1F4C5} Current <b>Gym Day ${dayNum}</b>:\n${formatDayLog(existing)}\n\n\u{1F504} Want to update?`, {
+        reply_markup: { inline_keyboard: [[{ text: "\u2705 Yes", callback_data: `confirm_update_gym_${dayNum}` }, { text: "\u274C Cancel", callback_data: "cancel_action" }]] },
+      });
+      return;
+    }
+
+    const homeStatusMatch = text.match(/^\/home_status_updated(\d+)/);
+    if (homeStatusMatch) {
+      const dayNum = parseInt(homeStatusMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "home");
+      if (!existing) { await tgSend(chatId, `\u274C Home Day ${dayNum} not found.`); return; }
+      await storage.updateDay(existing.id, { status: "Logged" });
+      await tgSend(chatId, `\u2705 <b>Home Day ${dayNum}</b> marked as <b>Logged</b>!`);
+      return;
+    }
+
+    const gymStatusMatch = text.match(/^\/gym_status_updated(\d+)/);
+    if (gymStatusMatch) {
+      const dayNum = parseInt(gymStatusMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "gym");
+      if (!existing) { await tgSend(chatId, `\u274C Gym Day ${dayNum} not found.`); return; }
+      await storage.updateDay(existing.id, { status: "Logged" });
+      await tgSend(chatId, `\u2705 <b>Gym Day ${dayNum}</b> marked as <b>Logged</b>!`);
+      return;
+    }
+
+    const viewHomeMatch = text.match(/^\/view_home_d(\d+)/);
+    if (viewHomeMatch) {
+      const dayNum = parseInt(viewHomeMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "home");
+      if (!existing) { await tgSend(chatId, `\u274C Home Day ${dayNum} not found.`); return; }
+      await tgSend(chatId, formatDayLog(existing));
+      return;
+    }
+
+    const viewGymMatch = text.match(/^\/view_gym_d(\d+)/);
+    if (viewGymMatch) {
+      const dayNum = parseInt(viewGymMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "gym");
+      if (!existing) { await tgSend(chatId, `\u274C Gym Day ${dayNum} not found.`); return; }
+      await tgSend(chatId, formatDayLog(existing));
+      return;
+    }
+
+    if (text.startsWith("/export_home_logs")) {
+      const days = await storage.getDaysByCategory("home");
+      if (days.length === 0) { await tgSend(chatId, "\u{1F4ED} No home logs."); return; }
+      let t = `\u{1F3E0} <b>All Home Logs</b>\n\n`;
+      for (const d of days) t += formatDayLog(d) + "\n";
+      const chunks = splitMessage(t);
+      for (const chunk of chunks) await tgSend(chatId, chunk);
+      return;
+    }
+
+    if (text.startsWith("/export_gym_logs")) {
+      const days = await storage.getDaysByCategory("gym");
+      if (days.length === 0) { await tgSend(chatId, "\u{1F4ED} No gym logs."); return; }
+      let t = `\u{1F3CB}\uFE0F <b>All Gym Logs</b>\n\n`;
+      for (const d of days) t += formatDayLog(d) + "\n";
+      const chunks = splitMessage(t);
+      for (const chunk of chunks) await tgSend(chatId, chunk);
+      return;
+    }
+
+    const deleteHomeMatch = text.match(/^\/delete_home_d(\d+)/);
+    if (deleteHomeMatch) {
+      const dayNum = parseInt(deleteHomeMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "home");
+      if (!existing) { await tgSend(chatId, `\u274C Home Day ${dayNum} not found.`); return; }
+      await tgSend(chatId, `\u26A0\uFE0F Delete <b>Home Day ${dayNum}</b>?`, {
+        reply_markup: { inline_keyboard: [[{ text: "\u2705 Yes", callback_data: `delete_confirm_home_${dayNum}` }, { text: "\u274C Cancel", callback_data: "cancel_action" }]] },
+      });
+      return;
+    }
+
+    const deleteGymMatch = text.match(/^\/delete_gym_d(\d+)/);
+    if (deleteGymMatch) {
+      const dayNum = parseInt(deleteGymMatch[1]);
+      const existing = await storage.getDayByNumberAndCategory(dayNum, "gym");
+      if (!existing) { await tgSend(chatId, `\u274C Gym Day ${dayNum} not found.`); return; }
+      await tgSend(chatId, `\u26A0\uFE0F Delete <b>Gym Day ${dayNum}</b>?`, {
+        reply_markup: { inline_keyboard: [[{ text: "\u2705 Yes", callback_data: `delete_confirm_gym_${dayNum}` }, { text: "\u274C Cancel", callback_data: "cancel_action" }]] },
+      });
+      return;
+    }
+
+    if (text.startsWith("/stats")) {
+      const homeDays = await storage.getDaysByCategory("home");
+      const gymDays = await storage.getDaysByCategory("gym");
+      const totalHome = homeDays.length;
+      const totalGym = gymDays.length;
+      const homeIntensity = homeDays.reduce((sum: number, d: any) => sum + calcIntensity(d.exercises), 0);
+      const gymIntensity = gymDays.reduce((sum: number, d: any) => sum + calcIntensity(d.exercises), 0);
+      const visitors = await storage.getUniqueVisitorCount();
+      const t = `\u{1F4CA} <b>Progress Stats</b>\n\n\u{1F3E0} Home: ${totalHome} days (Total intensity: ${homeIntensity})\n\u{1F3CB}\uFE0F Gym: ${totalGym} days (Total intensity: ${gymIntensity})\n\u{1F465} Unique visitors: ${visitors}`;
+      await tgSend(chatId, t);
+      return;
+    }
+
+    if (text.startsWith("/intensity_home") || text.startsWith("/intensity_gym")) {
+      const cat = text.includes("home") ? "home" : "gym";
+      const days = await storage.getDaysByCategory(cat);
+      if (days.length === 0) { await tgSend(chatId, `\u{1F4ED} No ${cat} data.`); return; }
+      const sorted = days.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+      const max = Math.max(...sorted.map((d: any) => calcIntensity(d.exercises)));
+      let t = `\u{1F4CA} <b>${cat === "home" ? "Home" : "Gym"} Intensity</b>\n\n`;
+      for (const d of sorted) {
+        const intensity = calcIntensity(d.exercises);
+        const barLen = max > 0 ? Math.round((intensity / max) * 15) : 0;
+        t += `D${d.dayNumber} ${"█".repeat(barLen)}${"░".repeat(15 - barLen)} ${intensity}\n`;
+      }
+      await tgSend(chatId, `<pre>${t}</pre>`);
+      return;
+    }
+
+    if (text.startsWith("/ai ")) {
+      const userMsg = text.replace("/ai ", "").trim();
+      await tgAction(chatId, "typing");
+      const response = await chatWithGeminiTelegram(userMsg);
+      const formatted = formatGeminiResponse(response);
+      const chunks = splitMessage(formatted);
+      for (const chunk of chunks) await tgSend(chatId, chunk);
+      return;
+    }
+
+    if (text.startsWith("/clear_memory")) {
+      await storage.clearChatMemory();
+      await tgSend(chatId, "\u2705 AI conversation memory cleared.");
+      return;
+    }
+
+    if (text.startsWith("/save_browser_memory")) {
+      webhookStates.set(chatId, { action: "browser_memory" });
+      await tgSend(chatId, "\u{1F4DD} Send the persistent instructions/memory for the web chat AI.");
+      return;
+    }
+
+    if (text.startsWith("/dl_backup")) {
+      await tgAction(chatId, "typing");
+      const data = await storage.exportAllData();
+      const backup = { exportedAt: new Date().toISOString(), data };
+      const content = JSON.stringify(backup, null, 2);
+      await tgSendDocument(chatId, content, `lockin_backup_${new Date().toISOString().split("T")[0]}.json`, "\u{1F4E6} Full data backup");
+      return;
+    }
+
+    if (text.startsWith("/reminders")) {
+      const reminders = await storage.getAllReminders();
+      if (reminders.length === 0) {
+        await tgSend(chatId, "\u{1F4ED} No pending reminders.");
+        return;
+      }
+      let t = `\u23F0 <b>Pending Reminders (${reminders.length})</b>\n\n`;
+      reminders.forEach((r: any, idx: number) => {
+        const timeStr = new Date(r.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+        const recurLabel = r.isRecurring ? ` \u{1F501} recurring` : "";
+        let intervalLabel = "";
+        if (r.isRecurring && r.intervalMs) {
+          if (r.intervalMs < 60000) intervalLabel = ` (every ${Math.round(r.intervalMs / 1000)}s)`;
+          else if (r.intervalMs < 3600000) intervalLabel = ` (every ${Math.round(r.intervalMs / 60000)} min)`;
+          else if (r.intervalMs < 86400000) intervalLabel = ` (every ${Math.round(r.intervalMs / 3600000)} hr)`;
+          else intervalLabel = ` (every ${Math.round(r.intervalMs / 86400000)} day)`;
+        }
+        t += `<b>${idx + 1}.</b> ${esc(r.message)}\n   \u{1F552} ${timeStr}${recurLabel}${intervalLabel}\n   <i>ID: #${r.id}</i>\n\n`;
+      });
+      await tgSend(chatId, t);
+      return;
+    }
+
+    const createImageMatch = text.match(/^\/create_image\s*(.*)/);
+    if (createImageMatch) {
+      const prompt = createImageMatch[1]?.trim();
+      if (!prompt) {
+        await tgSend(chatId, "\u{1F3A8} <b>Image Generator</b>\n\nUsage:\n<code>/create_image [your prompt]</code>");
+        return;
+      }
+      await tgAction(chatId, "upload_photo");
+      const result = await generateImageWithGemini(prompt);
+      if (!result) { await tgSend(chatId, "\u274C Image generation failed."); return; }
+      if (result.text) await tgSend(chatId, formatGeminiResponse(result.text));
+      if (result.imageBuffer) await tgSendPhoto(chatId, result.imageBuffer, `\u{1F3A8} Generated: ${prompt}`);
+      else await tgSend(chatId, "\u26A0\uFE0F AI responded but didn't generate an image.");
+      return;
+    }
+
+    if (text.startsWith("/help") || text.startsWith("/commands")) {
+      await tgSend(chatId, `\u{1F4CB} <b>Commands</b>\n\n/save_home_dN, /save_gym_dN\n/update_dN_home, /update_dN_gym\n/view_home_dN, /view_gym_dN\n/delete_home_dN, /delete_gym_dN\n/home_status_updatedN, /gym_status_updatedN\n/export_home_logs, /export_gym_logs\n/stats, /intensity_home, /intensity_gym\n/ai [message]\n/clear_memory, /save_browser_memory\n/dl_backup, /reminders\n/create_image [prompt]\n\n<i>Or just type naturally!</i>`);
+      return;
+    }
+
+    if (text.startsWith("/")) return;
+
+    const state = webhookStates.get(chatId);
+    if (!state) {
+      await tgAction(chatId, "typing");
+      const response = await chatWithGeminiTelegram(text);
+      const formatted = formatGeminiResponse(response);
+      const chunks = splitMessage(formatted);
+      for (const chunk of chunks) await tgSend(chatId, chunk);
+      return;
+    }
+
+    if (state.action === "browser_memory") {
+      await storage.saveBrowserMemory(text);
+      await tgSend(chatId, "\u2705 <b>Browser memory saved!</b>");
+      webhookStates.delete(chatId);
+      return;
+    }
+
+    const exercises = text.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+    if (exercises.length === 0) {
+      await tgSend(chatId, "\u274C No exercises detected.");
+      return;
+    }
+
+    try {
+      if (state.action === "save") {
+        await storage.createDay({ dayNumber: state.dayNumber!, status: "Logged", exercises, category: state.category! });
+        await tgSend(chatId, `\u2705 <b>${state.category === "home" ? "Home" : "Gym"} Day ${state.dayNumber}</b> saved! ${exercises.length} exercises.`);
+      } else if (state.action === "update") {
+        await storage.updateDay(state.dayId!, { exercises, status: "Logged" });
+        await tgSend(chatId, `\u2705 <b>${state.category === "home" ? "Home" : "Gym"} Day ${state.dayNumber}</b> updated! ${exercises.length} exercises.`);
+      }
+    } catch (err: any) {
+      await tgSend(chatId, `\u274C Error: ${esc(err.message || "Unknown error")}`);
+    }
+    webhookStates.delete(chatId);
+  } catch (err: any) {
+    console.error("Webhook handler error:", err);
+  }
 }

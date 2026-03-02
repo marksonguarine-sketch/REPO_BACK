@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { storage } from "./storage";
-import { log } from "./index";
+import { log } from "./log";
 
 const ai = new GoogleGenAI({ apiKey: "AIzaSyDlFlj9C9gzOgwe9Ic-TIieK5I6FHW1Ek8" });
 

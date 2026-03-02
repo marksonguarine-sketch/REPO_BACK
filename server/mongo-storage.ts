@@ -221,24 +221,22 @@ export class MongoStorage implements IStorage {
 
   async claimDueReminders(): Promise<any[]> {
     const col = await getCollection<MongoReminder>("reminders");
-    const now = new Date();
-    const docs = await col.find({ sent: false, triggerAt: { $lte: now } }).toArray();
     const claimed: any[] = [];
-    for (const d of docs) {
-      const result = await col.findOneAndUpdate(
-        { id: d.id, sent: false },
+    while (true) {
+      const now = new Date();
+      const doc = await col.findOneAndUpdate(
+        { sent: false, triggerAt: { $lte: now } },
         { $set: { sent: true } },
-        { returnDocument: "after" }
+        { returnDocument: "before" }
       );
-      if (result) {
-        claimed.push({
-          id: d.id,
-          message: d.message,
-          triggerAt: d.triggerAt,
-          isRecurring: d.isRecurring || false,
-          intervalMs: d.intervalMs || 0,
-        });
-      }
+      if (!doc) break;
+      claimed.push({
+        id: doc.id,
+        message: doc.message,
+        triggerAt: doc.triggerAt,
+        isRecurring: doc.isRecurring || false,
+        intervalMs: doc.intervalMs || 0,
+      });
     }
     return claimed;
   }

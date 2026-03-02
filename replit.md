@@ -4,10 +4,11 @@
 Workout logging application for tracking home and gym workouts (D1-D15+). Features a Telegram bot with AI assistant (Gemini function calling) for managing logs via natural language, a read-only web dashboard with floating AI chat (persistent browser memory), visitor tracking with Telegram notifications, backup/restore system, and reminder system. All data stored in Railway MongoDB.
 
 ## Architecture
-- **Frontend**: React + Vite + Tailwind CSS + Framer Motion
-- **Backend**: Express.js + MongoDB (Railway)
-- **Bot**: node-telegram-bot-api (polling mode, HTML parse mode)
+- **Frontend**: React + Vite + Tailwind CSS + Framer Motion (static build for Netlify CDN)
+- **Backend**: Express.js (Replit) / Netlify Functions (Netlify) + MongoDB (Railway)
+- **Bot**: node-telegram-bot-api (Replit: polling) / Telegram Webhook (Netlify: serverless)
 - **AI**: Google Gemini API (gemini-2.5-flash) with function calling + Google Search grounding
+- **Image Gen**: gemini-2.0-flash-exp with responseModalities for image generation
 - **Database**: Railway MongoDB (connection in `server/railway_db.ts`)
 
 ## Key Features
@@ -68,7 +69,7 @@ Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `
 + Photo upload (AI analysis), JSON file upload (backup restore)
 
 ## Gemini Function Calling (Telegram)
-18 functions: save_workout, update_workout, delete_workout, view_workout, view_all_workouts, mark_status_done, get_stats, get_intensity, export_logs, save_browser_memory, view_browser_memory, delete_browser_memory, clear_ai_memory, set_reminder, list_reminders, delete_reminder, create_backup, get_last_backup_info
+19 functions: save_workout, update_workout, delete_workout, view_workout, view_all_workouts, mark_status_done, get_stats, get_intensity, export_logs, save_browser_memory, view_browser_memory, delete_browser_memory, clear_ai_memory, set_reminder, list_reminders, delete_reminder, update_reminder, create_backup, get_last_backup_info
 
 ## API Endpoints
 - GET /api/days?category=home|gym - List workout days
@@ -84,6 +85,44 @@ Collections: `days`, `visitors`, `chat_memory`, `browser_memory`, `reminders`, `
 - API responses: no-cache, no-store, must-revalidate headers
 - HTML: no-cache headers
 - Static assets: 1h maxAge
+
+## Netlify Deployment
+The app is fully Netlify-compatible with serverless functions.
+
+### Files
+- `netlify.toml` - Build config, redirects, function settings
+- `netlify/functions/api.ts` - All API routes as a single serverless function
+- `netlify/functions/telegram-webhook.ts` - Telegram webhook handler (replaces polling)
+- `netlify/functions/check-reminders.ts` - Reminder checker (call via cron/external scheduler)
+- `script/build-netlify.ts` - Frontend build script for Netlify
+- `script/setup-telegram-webhook.ts` - Register webhook with Telegram after deploy
+- `server/log.ts` - Standalone log utility (no circular deps for serverless)
+
+### Netlify Environment Variables (set in Netlify dashboard)
+- `TELEGRAM_BOT_TOKEN` - Telegram bot token
+- `SESSION_SECRET` - Bot API secret for write endpoints
+- `GEMINI_API_KEY` - Google Gemini API key (also hardcoded in gemini.ts)
+- `MONGODB_URI` - Railway MongoDB connection string (hardcoded in railway_db.ts)
+
+### Setup Steps
+1. Connect GitHub repo to Netlify
+2. Set environment variables in Netlify dashboard
+3. Deploy (build command: `npx tsx script/build-netlify.ts`)
+4. After deploy, run: `npx tsx script/setup-telegram-webhook.ts https://your-site.netlify.app`
+5. Set up a cron job (e.g., cron-job.org) to call `https://your-site.netlify.app/cron/check-reminders` every minute for reminders
+
+### Key Differences from Replit
+- No long-running process — all serverless
+- Telegram uses webhook instead of polling (no conflict issues)
+- Reminders checked via external cron, not setInterval
+- Frontend served by Netlify CDN (fast)
+- API routes redirected: `/api/*` → `/.netlify/functions/api/*`
+- `sendOwnerNotification` uses direct HTTP API when no bot instance available
+
+### Reminder Architecture (Serverless)
+- `claimDueReminders()` uses atomic `findOneAndUpdate` in a loop — impossible to send duplicates
+- Each invocation claims and sends in one shot, then reschedules recurring ones
+- Cron frequency determines minimum reminder precision (1-min cron = ~1 min precision)
 
 ## Design
 - Dark glassmorphic: --bg:#0b0f17, --accent:#7c5cff, --accent2:#38bdf8
