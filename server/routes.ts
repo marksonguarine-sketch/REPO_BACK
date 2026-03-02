@@ -198,7 +198,7 @@ export async function registerRoutes(
     }
   });
 
-  startTelegramBot();
+  startTelegramBot().catch(err => console.error("Failed to start Telegram bot:", err));
 
   return httpServer;
 }

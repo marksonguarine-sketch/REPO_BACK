@@ -138,16 +138,58 @@ async function checkReminders() {
   }
 }
 
-export function startTelegramBot() {
+export async function startTelegramBot() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     log("TELEGRAM_BOT_TOKEN not set, skipping bot startup", "telegram");
     return;
   }
 
-  const bot = new TelegramBot(token, { polling: true });
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
+    const kickRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
+    const kickData = await kickRes.json() as any;
+    if (kickData.result?.length) {
+      const lastId = kickData.result[kickData.result.length - 1].update_id;
+      await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${lastId + 1}&timeout=0`);
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  } catch (e: any) {
+    log(`Pre-polling cleanup error (non-fatal): ${e.message}`, "telegram");
+  }
+
+  const bot = new TelegramBot(token, { polling: false });
   botInstance = bot;
-  log("Telegram bot started with polling", "telegram");
+  log("Telegram bot started (manual polling)", "telegram");
+
+  let pollingOffset = 0;
+  async function manualPoll() {
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${token}/getUpdates?offset=${pollingOffset}&timeout=15&allowed_updates=${encodeURIComponent(JSON.stringify(["message", "callback_query"]))}`
+      );
+      const data = await res.json() as any;
+      if (data.ok && data.result?.length) {
+        for (const update of data.result) {
+          pollingOffset = update.update_id + 1;
+          bot.processUpdate(update);
+        }
+      } else if (!data.ok && data.error_code === 409) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const kickRes2 = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=-1&timeout=0`);
+          const kickData2 = await kickRes2.json() as any;
+          if (kickData2.ok && kickData2.result?.length) {
+            pollingOffset = kickData2.result[kickData2.result.length - 1].update_id + 1;
+          }
+        } catch {}
+      }
+    } catch (e: any) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    setTimeout(manualPoll, 100);
+  }
+  manualPoll();
 
   reminderInterval = setInterval(checkReminders, 3000);
   checkReminders();
