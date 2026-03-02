@@ -1,4 +1,4 @@
-node_modules
+2node_modules
 dist
 .DS_Store
 server/public
