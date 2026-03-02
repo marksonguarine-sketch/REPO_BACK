@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "./pages/Home";
+import { ChatWidget } from "./components/ChatWidget";
+import { useVisitorTracking } from "./hooks/use-visitor";
 
 function Router() {
   return (
@@ -16,10 +18,13 @@ function Router() {
 }
 
 function App() {
+  useVisitorTracking();
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Router />
+        <ChatWidget />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

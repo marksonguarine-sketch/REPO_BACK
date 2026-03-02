@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { startTelegramBot } from "./telegram";
+import { startTelegramBot, sendOwnerNotification } from "./telegram";
+import { chatWithGeminiWeb } from "./gemini";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -128,6 +129,78 @@ export async function registerRoutes(
       await storage.createDay(day);
     }
   }
+
+  // Visitor tracking
+  app.post("/api/visitor", async (req, res) => {
+    try {
+      const { fingerprint, referrer } = req.body;
+      if (!fingerprint) return res.status(400).json({ message: "fingerprint required" });
+
+      const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+      const ipStr = Array.isArray(ip) ? ip[0] : ip;
+
+      let country = "Unknown";
+      let city = "Unknown";
+      try {
+        const geoRes = await fetch(`http://ip-api.com/json/${ipStr.split(",")[0].trim()}?fields=country,city`);
+        if (geoRes.ok) {
+          const geoData = await geoRes.json() as any;
+          if (geoData.country) country = geoData.country;
+          if (geoData.city) city = geoData.city;
+        }
+      } catch {}
+
+      const ref = referrer || "direct";
+      const result = await storage.addVisitor(fingerprint, ref, country, city);
+
+      let vendorName = "Direct Link";
+      const refLower = ref.toLowerCase();
+      if (refLower.includes("facebook") || refLower.includes("fb.")) vendorName = "Facebook";
+      else if (refLower.includes("instagram")) vendorName = "Instagram";
+      else if (refLower.includes("twitter") || refLower.includes("x.com")) vendorName = "Twitter/X";
+      else if (refLower.includes("tiktok")) vendorName = "TikTok";
+      else if (refLower.includes("google")) vendorName = "Google";
+      else if (refLower.includes("youtube")) vendorName = "YouTube";
+      else if (ref && ref !== "direct" && ref !== "") {
+        try { vendorName = new URL(ref).hostname; } catch { vendorName = ref.substring(0, 50); }
+      }
+
+      const now = new Date();
+      const timeStr = now.toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+      const notification = `\u{1F4F2} <b>New Visitor Alert!</b>
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\u{1F310} Vendor: <b>${vendorName}</b>
+\u{1F195} Unique?: <b>${result.isNew ? "Yes" : "No"}</b>
+\u{1F4CD} Location: ${city}, ${country}
+\u{1F552} Time: ${timeStr}
+\u{1F465} Total unique visitors: <b>${result.totalUnique}</b>`;
+
+      sendOwnerNotification(notification);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Web chat endpoint
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { message, history } = req.body;
+      if (!message) return res.status(400).json({ message: "message required" });
+      const response = await chatWithGeminiWeb(message, history || []);
+
+      const visitorMsg = `\u{1F4AC} <b>Web Chat Message</b>
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\u{1F464} Visitor: ${message.substring(0, 500)}
+\u{1F916} AI: ${response.substring(0, 500)}`;
+      sendOwnerNotification(visitorMsg);
+
+      res.json({ response });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // Start Telegram bot
   startTelegramBot();

@@ -1,8 +1,15 @@
 import TelegramBot from "node-telegram-bot-api";
 import { storage } from "./storage";
 import { log } from "./index";
+import { chatWithGeminiTelegram, getGeminiComment } from "./gemini";
 
 const OWNER_ID = parseInt(process.env.TELEGRAM_OWNER_ID || "0", 10);
+
+let botInstance: TelegramBot | null = null;
+
+export function getBotInstance(): TelegramBot | null {
+  return botInstance;
+}
 
 interface UserState {
   action: string;
@@ -18,10 +25,7 @@ function isOwner(chatId: number): boolean {
 }
 
 function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function calcIntensity(exercises: string[]): number {
@@ -55,6 +59,33 @@ function formatDayLog(day: { dayNumber: number; status: string; exercises: strin
   return text;
 }
 
+function splitMessage(text: string): string[] {
+  if (text.length <= 4000) return [text];
+  const chunks: string[] = [];
+  let current = "";
+  const lines = text.split("\n");
+  for (const line of lines) {
+    if ((current + line + "\n").length > 3900) {
+      chunks.push(current);
+      current = line + "\n";
+    } else {
+      current += line + "\n";
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+export async function sendOwnerNotification(text: string) {
+  if (botInstance && OWNER_ID) {
+    try {
+      await botInstance.sendMessage(OWNER_ID, text, { parse_mode: "HTML" });
+    } catch (err: any) {
+      log(`Failed to send notification: ${err.message}`, "telegram");
+    }
+  }
+}
+
 export function startTelegramBot() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
@@ -63,7 +94,30 @@ export function startTelegramBot() {
   }
 
   const bot = new TelegramBot(token, { polling: true });
+  botInstance = bot;
   log("Telegram bot started with polling", "telegram");
+
+  bot.setMyCommands([
+    { command: "start", description: "Welcome screen" },
+    { command: "help", description: "Detailed command guide" },
+    { command: "commands", description: "Quick command list" },
+    { command: "save_home_d", description: "Save home workout day N" },
+    { command: "save_gym_d", description: "Save gym workout day N" },
+    { command: "update_d", description: "Update day N (add _home or _gym)" },
+    { command: "home_status_updated", description: "Mark home day N as done" },
+    { command: "gym_status_updated", description: "Mark gym day N as done" },
+    { command: "view_home_d", description: "View home day N" },
+    { command: "view_gym_d", description: "View gym day N" },
+    { command: "export_home_logs", description: "Export all home logs" },
+    { command: "export_gym_logs", description: "Export all gym logs" },
+    { command: "delete_home_d", description: "Delete home day N" },
+    { command: "delete_gym_d", description: "Delete gym day N" },
+    { command: "stats", description: "Progress summary" },
+    { command: "intensity_home", description: "Home intensity chart" },
+    { command: "intensity_gym", description: "Gym intensity chart" },
+    { command: "ai", description: "Chat with AI assistant" },
+    { command: "clear_memory", description: "Clear AI chat memory" },
+  ]).catch(err => log(`Failed to set commands: ${err.message}`, "telegram"));
 
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -79,9 +133,7 @@ export function startTelegramBot() {
             { text: "\u{1F3E0} Home Logs", callback_data: "view_home" },
             { text: "\u{1F3CB}\u{FE0F} Gym Logs", callback_data: "view_gym" },
           ],
-          [
-            { text: "\u{1F4CB} Commands", callback_data: "show_help" },
-          ],
+          [{ text: "\u{1F4CB} Commands", callback_data: "show_help" }],
         ],
       },
     });
@@ -101,27 +153,21 @@ export function startTelegramBot() {
 \u{1F4DD} <b>LOG MANAGEMENT</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 /save_home_d[N] \u2014 Save a new home workout for day N
-  <i>Example: /save_home_d16</i>
 /save_gym_d[N] \u2014 Save a new gym workout for day N
-  <i>Example: /save_gym_d16</i>
 /update_d[N]_home \u2014 Update existing home workout day N
-  <i>Example: /update_d15_home</i>
 /update_d[N]_gym \u2014 Update existing gym workout day N
-  <i>Example: /update_d15_gym</i>
 
 \u2705 <b>STATUS UPDATES</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-/home_status_updated[N] \u2014 Mark home day N as "Logged" (done)
-  <i>Example: /home_status_updated15</i>
-/gym_status_updated[N] \u2014 Mark gym day N as "Logged" (done)
-  <i>Example: /gym_status_updated15</i>
+/home_status_updated[N] \u2014 Mark home day N as done
+/gym_status_updated[N] \u2014 Mark gym day N as done
 
 \u{1F4CA} <b>VIEW &amp; EXPORT</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 /view_home_d[N] \u2014 View specific home day
 /view_gym_d[N] \u2014 View specific gym day
-/export_home_logs \u2014 Export all home logs (ready to copy)
-/export_gym_logs \u2014 Export all gym logs (ready to copy)
+/export_home_logs \u2014 Export all home logs
+/export_gym_logs \u2014 Export all gym logs
 
 \u{1F5D1}\u{FE0F} <b>DELETE</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -130,19 +176,16 @@ export function startTelegramBot() {
 
 \u{1F4CA} <b>STATS</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-/stats \u2014 View progress summary across both workouts
-/intensity_home \u2014 See intensity chart for home workouts
-/intensity_gym \u2014 See intensity chart for gym workouts
+/stats \u2014 View progress summary
+/intensity_home \u2014 Home intensity chart
+/intensity_gym \u2014 Gym intensity chart
 
-\u{1F4A1} <b>HOW TO LOG EXERCISES</b>
+\u{1F916} <b>AI ASSISTANT</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-When prompted, type each exercise on a new line:
-<code>Back squats (30kg) \u2014 1\u00D7200
-Diamond push-ups \u2014 2\u00D720
-Plank \u2014 1\u00D71:00</code>
+/ai [message] \u2014 Chat with AI (remembers conversations)
+/clear_memory \u2014 Clear AI conversation memory
 
 \u{1F4AA} Keep pushing, John!`;
-
     await bot.sendMessage(chatId, helpText, { parse_mode: "HTML" });
   });
 
@@ -169,9 +212,32 @@ Plank \u2014 1\u00D71:00</code>
 /stats
 /intensity_home
 /intensity_gym
+/ai [message]
+/clear_memory
 
 <i>Use /help for detailed explanations.</i>`;
     await bot.sendMessage(chatId, commandsList, { parse_mode: "HTML" });
+  });
+
+  // AI chat command
+  bot.onText(/\/ai (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    if (!isOwner(chatId)) return;
+    const userMessage = match![1];
+    await bot.sendChatAction(chatId, "typing");
+    const response = await chatWithGeminiTelegram(userMessage);
+    const formatted = formatGeminiResponse(response);
+    const chunks = splitMessage(formatted);
+    for (const chunk of chunks) {
+      await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+    }
+  });
+
+  bot.onText(/\/clear_memory/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (!isOwner(chatId)) return;
+    await storage.clearChatMemory();
+    await bot.sendMessage(chatId, "\u{1F9F9} AI conversation memory has been cleared!");
   });
 
   // STATUS UPDATE commands
@@ -188,6 +254,10 @@ Plank \u2014 1\u00D71:00</code>
     }
     await storage.updateDay(existing.id, { status: "Logged" });
     await bot.sendMessage(chatId, `\u2705 <b>Home Day ${dayNum}</b> has been marked as <b>Logged</b> (done)!`, { parse_mode: "HTML" });
+    const comment = await getGeminiComment("Completed home workout", `Home Day ${dayNum} marked as done. Exercises: ${existing.exercises.join(", ")}`);
+    if (comment) {
+      await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+    }
   });
 
   bot.onText(/\/gym_status_updated(\d+)/, async (msg, match) => {
@@ -203,6 +273,10 @@ Plank \u2014 1\u00D71:00</code>
     }
     await storage.updateDay(existing.id, { status: "Logged" });
     await bot.sendMessage(chatId, `\u2705 <b>Gym Day ${dayNum}</b> has been marked as <b>Logged</b> (done)!`, { parse_mode: "HTML" });
+    const comment = await getGeminiComment("Completed gym workout", `Gym Day ${dayNum} marked as done. Exercises: ${existing.exercises.join(", ")}`);
+    if (comment) {
+      await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+    }
   });
 
   // SAVE commands
@@ -283,9 +357,7 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const dayNum = parseInt(match![1]);
     const day = await storage.getDayByNumberAndCategory(dayNum, "home");
-    if (!day) {
-      return bot.sendMessage(chatId, `\u274C Home Day ${dayNum} not found.`);
-    }
+    if (!day) return bot.sendMessage(chatId, `\u274C Home Day ${dayNum} not found.`);
     await bot.sendMessage(chatId, `\u{1F3E0} <b>HOME WORKOUT</b>\n\n${formatDayLog(day)}`, { parse_mode: "HTML" });
   });
 
@@ -294,9 +366,7 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const dayNum = parseInt(match![1]);
     const day = await storage.getDayByNumberAndCategory(dayNum, "gym");
-    if (!day) {
-      return bot.sendMessage(chatId, `\u274C Gym Day ${dayNum} not found.`);
-    }
+    if (!day) return bot.sendMessage(chatId, `\u274C Gym Day ${dayNum} not found.`);
     await bot.sendMessage(chatId, `\u{1F3CB}\u{FE0F} <b>GYM WORKOUT</b>\n\n${formatDayLog(day)}`, { parse_mode: "HTML" });
   });
 
@@ -306,13 +376,9 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const allDays = await storage.getDaysByCategory("home");
     const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
-    if (sorted.length === 0) {
-      return bot.sendMessage(chatId, "\u274C No home logs found.");
-    }
+    if (sorted.length === 0) return bot.sendMessage(chatId, "\u274C No home logs found.");
     let text = `\u{1F3E0} <b>HOME WORKOUT LOGS</b>\n(D1\u2013D${sorted[sorted.length - 1].dayNumber})\n\n`;
-    sorted.forEach(day => {
-      text += formatDayLog(day) + "\n";
-    });
+    sorted.forEach(day => { text += formatDayLog(day) + "\n"; });
     const chunks = splitMessage(text);
     for (const chunk of chunks) {
       await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
@@ -324,13 +390,9 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const allDays = await storage.getDaysByCategory("gym");
     const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
-    if (sorted.length === 0) {
-      return bot.sendMessage(chatId, "\u274C No gym logs found.");
-    }
+    if (sorted.length === 0) return bot.sendMessage(chatId, "\u274C No gym logs found.");
     let text = `\u{1F3CB}\u{FE0F} <b>GYM WORKOUT LOGS</b>\n(D1\u2013D${sorted[sorted.length - 1].dayNumber})\n\n`;
-    sorted.forEach(day => {
-      text += formatDayLog(day) + "\n";
-    });
+    sorted.forEach(day => { text += formatDayLog(day) + "\n"; });
     const chunks = splitMessage(text);
     for (const chunk of chunks) {
       await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
@@ -343,9 +405,7 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const dayNum = parseInt(match![1]);
     const day = await storage.getDayByNumberAndCategory(dayNum, "home");
-    if (!day) {
-      return bot.sendMessage(chatId, `\u274C Home Day ${dayNum} not found.`);
-    }
+    if (!day) return bot.sendMessage(chatId, `\u274C Home Day ${dayNum} not found.`);
     await bot.sendMessage(chatId, `\u26A0\uFE0F Are you sure you want to delete <b>Home Day ${dayNum}</b>?`, {
       parse_mode: "HTML",
       reply_markup: {
@@ -364,9 +424,7 @@ Plank \u2014 1\u00D71:00</code>
     if (!isOwner(chatId)) return;
     const dayNum = parseInt(match![1]);
     const day = await storage.getDayByNumberAndCategory(dayNum, "gym");
-    if (!day) {
-      return bot.sendMessage(chatId, `\u274C Gym Day ${dayNum} not found.`);
-    }
+    if (!day) return bot.sendMessage(chatId, `\u274C Gym Day ${dayNum} not found.`);
     await bot.sendMessage(chatId, `\u26A0\uFE0F Are you sure you want to delete <b>Gym Day ${dayNum}</b>?`, {
       parse_mode: "HTML",
       reply_markup: {
@@ -391,7 +449,6 @@ Plank \u2014 1\u00D71:00</code>
     const homeIntensity = homeDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
     const gymIntensity = gymDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
     const totalExercises = [...homeDays, ...gymDays].reduce((sum, d) => sum + d.exercises.length, 0);
-
     const statsText = `\u{1F4CA} <b>YOUR PROGRESS STATS</b>
 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
@@ -409,7 +466,6 @@ Plank \u2014 1\u00D71:00</code>
   Combined intensity: ${homeIntensity + gymIntensity}
 
 Keep going, John! \u{1F525}`;
-
     await bot.sendMessage(chatId, statsText, { parse_mode: "HTML" });
   });
 
@@ -450,7 +506,7 @@ Keep going, John! \u{1F525}`;
     await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
   });
 
-  // CALLBACK QUERIES (inline button clicks)
+  // CALLBACK QUERIES
   bot.on("callback_query", async (query) => {
     const chatId = query.message!.chat.id;
     if (!isOwner(chatId)) {
@@ -513,8 +569,15 @@ Keep going, John! \u{1F525}`;
       await bot.answerCallbackQuery(query.id);
       const dayId = parseInt(deleteConfirm[1]);
       try {
+        const day = await storage.getDay(dayId);
         await storage.deleteDay(dayId);
         await bot.sendMessage(chatId, "\u2705 Day deleted successfully!");
+        if (day) {
+          const comment = await getGeminiComment("Deleted workout", `${day.category} Day ${day.dayNumber} deleted`);
+          if (comment) {
+            await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+          }
+        }
       } catch {
         await bot.sendMessage(chatId, "\u274C Failed to delete day.");
       }
@@ -524,14 +587,23 @@ Keep going, John! \u{1F525}`;
     await bot.answerCallbackQuery(query.id);
   });
 
-  // MESSAGE handler for free-text input (save/update exercise data)
+  // MESSAGE handler for free-text input
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     if (!isOwner(chatId)) return;
     if (!msg.text || msg.text.startsWith("/")) return;
 
     const state = userStates.get(chatId);
-    if (!state) return;
+    if (!state) {
+      await bot.sendChatAction(chatId, "typing");
+      const response = await chatWithGeminiTelegram(msg.text);
+      const formatted = formatGeminiResponse(response);
+      const chunks = splitMessage(formatted);
+      for (const chunk of chunks) {
+        await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+      }
+      return;
+    }
 
     const exercises = msg.text
       .split("\n")
@@ -554,21 +626,20 @@ Keep going, John! \u{1F525}`;
         await bot.sendMessage(chatId, `\u2705 <b>${state.category === "home" ? "Home" : "Gym"} Day ${state.dayNumber}</b> saved successfully!\n\n${exercises.length} exercises logged.`, {
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "\u{1F4CB} View it", callback_data: `view_${state.category}` },
-              ],
-            ],
+            inline_keyboard: [[{ text: "\u{1F4CB} View it", callback_data: `view_${state.category}` }]],
           },
         });
+        const comment = await getGeminiComment(`Saved new ${state.category} workout`, `Day ${state.dayNumber}: ${exercises.join(", ")}`);
+        if (comment) {
+          await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+        }
       } else if (state.action === "update") {
-        await storage.updateDay(state.dayId!, {
-          exercises,
-          status: "Logged",
-        });
-        await bot.sendMessage(chatId, `\u2705 <b>${state.category === "home" ? "Home" : "Gym"} Day ${state.dayNumber}</b> updated successfully!\n\n${exercises.length} exercises logged.`, {
-          parse_mode: "HTML",
-        });
+        await storage.updateDay(state.dayId!, { exercises, status: "Logged" });
+        await bot.sendMessage(chatId, `\u2705 <b>${state.category === "home" ? "Home" : "Gym"} Day ${state.dayNumber}</b> updated successfully!\n\n${exercises.length} exercises logged.`, { parse_mode: "HTML" });
+        const comment = await getGeminiComment(`Updated ${state.category} workout`, `Day ${state.dayNumber}: ${exercises.join(", ")}`);
+        if (comment) {
+          await bot.sendMessage(chatId, `\u{1F916} ${formatGeminiResponse(comment)}`, { parse_mode: "HTML" });
+        }
       }
     } catch (err: any) {
       await bot.sendMessage(chatId, `\u274C Error: ${esc(err.message || "Unknown error")}`);
@@ -584,19 +655,11 @@ Keep going, John! \u{1F525}`;
   return bot;
 }
 
-function splitMessage(text: string): string[] {
-  if (text.length <= 4000) return [text];
-  const chunks: string[] = [];
-  let current = "";
-  const lines = text.split("\n");
-  for (const line of lines) {
-    if ((current + line + "\n").length > 3900) {
-      chunks.push(current);
-      current = line + "\n";
-    } else {
-      current += line + "\n";
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks;
+function formatGeminiResponse(text: string): string {
+  let formatted = text;
+  formatted = formatted.replace(/\*\*\*(.*?)\*\*\*/g, "<b><i>$1</i></b>");
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  formatted = formatted.replace(/\*(.*?)\*/g, "<i>$1</i>");
+  formatted = formatted.replace(/`(.*?)`/g, "<code>$1</code>");
+  return formatted;
 }
