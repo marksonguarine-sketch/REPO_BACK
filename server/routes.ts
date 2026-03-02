@@ -28,15 +28,8 @@ export async function registerRoutes(
     res.json(day);
   });
 
-  const requireBotSecret = (req: any, res: any, next: any) => {
-    const secret = req.headers["x-bot-secret"];
-    if (secret !== process.env.SESSION_SECRET) {
-      return res.status(403).json({ message: "Forbidden: use Telegram bot to manage logs" });
-    }
-    next();
-  };
 
-  app.post(api.days.create.path, requireBotSecret, async (req, res) => {
+  app.post(api.days.create.path, async (req, res) => {
     try {
       const input = api.days.create.input.parse(req.body);
       const day = await storage.createDay(input);
@@ -52,7 +45,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put(api.days.update.path, requireBotSecret, async (req, res) => {
+  app.put(api.days.update.path, async (req, res) => {
     try {
       const input = api.days.update.input.parse(req.body);
       const day = await storage.updateDay(Number(req.params.id), input);
@@ -71,7 +64,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.days.delete.path, requireBotSecret, async (req, res) => {
+  app.delete(api.days.delete.path, async (req, res) => {
     const day = await storage.getDay(Number(req.params.id));
     if (!day) {
       return res.status(404).json({ message: 'Day not found' });

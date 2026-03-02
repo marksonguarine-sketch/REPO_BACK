@@ -4,8 +4,9 @@ import { log } from "./log";
 import { chatWithGeminiTelegram, getGeminiComment, analyzeImageWithGemini, generateImageWithGemini } from "./gemini";
 import * as https from "https";
 import * as http from "http";
+import { config } from "./config";
 
-const OWNER_ID = 7474049767;
+const OWNER_ID = config.telegramOwnerId;
 
 let botInstance: TelegramBot | null = null;
 let reminderInterval: ReturnType<typeof setInterval> | null = null;
