@@ -46,7 +46,7 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
     await storage.addChatMemory("user", userMessage);
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${logsContext}`,
@@ -81,7 +81,7 @@ export async function chatWithGeminiWeb(userMessage: string, sessionHistory: { r
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nYou are chatting with a visitor on John's public workout tracking web app. Be friendly and helpful. Answer questions about John's workout progress, routines, and fitness journey based on the data. Keep responses short and engaging.\n\nCurrent workout data:\n${logsContext}`,
@@ -100,7 +100,7 @@ export async function getGeminiComment(action: string, details: string): Promise
     const logsContext = await getAllLogsContext();
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: `John just performed this action: ${action}\nDetails: ${details}\n\nGive a short, motivating comment (2-3 sentences max). Be specific about what he did.`,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nWorkout data:\n${logsContext}`,
