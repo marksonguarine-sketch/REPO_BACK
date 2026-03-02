@@ -4,9 +4,10 @@ import { z } from "zod";
 
 export const days = pgTable("days", {
   id: serial("id").primaryKey(),
-  dayNumber: integer("day_number").notNull().unique(),
-  status: text("status").notNull(), // 'Logged' | 'Planned'
-  exercises: text("exercises").array().notNull(), // Array of exercise strings
+  dayNumber: integer("day_number").notNull(),
+  status: text("status").notNull(),
+  exercises: text("exercises").array().notNull(),
+  category: text("category").notNull().default("home"),
 });
 
 export const insertDaySchema = createInsertSchema(days).omit({ id: true });

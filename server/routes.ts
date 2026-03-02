@@ -3,12 +3,18 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { startTelegramBot } from "./telegram";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   app.get(api.days.list.path, async (req, res) => {
+    const category = req.query.category as string | undefined;
+    if (category) {
+      const days = await storage.getDaysByCategory(category);
+      return res.json(days);
+    }
     const days = await storage.getDays();
     res.json(days);
   });
@@ -21,7 +27,15 @@ export async function registerRoutes(
     res.json(day);
   });
 
-  app.post(api.days.create.path, async (req, res) => {
+  const requireBotSecret = (req: any, res: any, next: any) => {
+    const secret = req.headers["x-bot-secret"];
+    if (secret !== process.env.SESSION_SECRET) {
+      return res.status(403).json({ message: "Forbidden: use Telegram bot to manage logs" });
+    }
+    next();
+  };
+
+  app.post(api.days.create.path, requireBotSecret, async (req, res) => {
     try {
       const input = api.days.create.input.parse(req.body);
       const day = await storage.createDay(input);
@@ -37,7 +51,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put(api.days.update.path, async (req, res) => {
+  app.put(api.days.update.path, requireBotSecret, async (req, res) => {
     try {
       const input = api.days.update.input.parse(req.body);
       const day = await storage.updateDay(Number(req.params.id), input);
@@ -56,95 +70,67 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.days.delete.path, async (req, res) => {
+  app.delete(api.days.delete.path, requireBotSecret, async (req, res) => {
+    const day = await storage.getDay(Number(req.params.id));
+    if (!day) {
+      return res.status(404).json({ message: 'Day not found' });
+    }
     await storage.deleteDay(Number(req.params.id));
     res.status(204).send();
   });
 
-  // Seed data if empty
-  const existingDays = await storage.getDays();
-  if (existingDays.length === 0) {
-    const seedData = [
-      {
-        dayNumber: 1,
-        status: "Logged",
-        exercises: ["Diamond push-ups — 1×40", "Squats (25kg) — 1×30", "Dumbbell curls (10 lbs each arm) — 1×100"],
-      },
-      {
-        dayNumber: 2,
-        status: "Logged",
-        exercises: ["Diamond push-ups — 1×20", "Normal push-ups — 1×20", "Squats (25kg) — 1×35", "Squats (25kg) — 1×30"],
-      },
-      {
-        dayNumber: 3,
-        status: "Logged",
-        exercises: ["Squats (25kg) — 1×40", "Squats (25kg) — 1×40"],
-      },
-      {
-        dayNumber: 4,
-        status: "Logged",
-        exercises: ["Back squats (25kg) — 1×70", "Back squats (25kg) — 1×80", "Walking — 1×2h"],
-      },
-      {
-        dayNumber: 5,
-        status: "Logged",
-        exercises: ["Back squats (25kg) — 1×100", "Back squats (25kg) — 1×60", "Bicep curls (10 lbs each arm) — 2×100", "Bulgarian split squats (10 lbs each hand) — 1×15/leg", "Deep side push-ups — 1×20", "Diamond push-ups — 2×40", "Walking — 1×2h"],
-      },
-      {
-        dayNumber: 6,
-        status: "Logged",
-        exercises: ["Jogging — 2×5m", "Plank — 1×1:00", "Plank — 1×0:40", "Sit-ups — 1×10", "Back squats (load) — 1×30", "Diamond push-ups — 1×20", "Walking — 1×2h"],
-      },
-      {
-        dayNumber: 7,
-        status: "Logged",
-        exercises: ["Back squats (load) — 1×110", "Jogging (mouth closed) — 1×5m", "Diamond push-ups — 1×40", "Diamond push-ups — 1×20", "Walking — 1×2h"],
-      },
-      {
-        dayNumber: 8,
-        status: "Logged",
-        exercises: ["Back squats — 1×120", "One-arm sack-of-rice lifts (25kg) — 1×5 (L)", "One-arm sack-of-rice lifts (25kg) — 1×5 (R)"],
-      },
-      {
-        dayNumber: 9,
-        status: "Logged",
-        exercises: ["One-arm lifts to waist level (20kg) — 2×20/arm", "Back squats (20kg) — 1×139", "Deep squats — 1×3"],
-      },
-      {
-        dayNumber: 10,
-        status: "Logged",
-        exercises: ["Rest — 1×day"],
-      },
-      {
-        dayNumber: 11,
-        status: "Logged",
-        exercises: ["One-hand bent pull (20kg) — 2×30", "Lying sack lift to chest — 1×10", "Hip thrust (20kg) — 1×50", "Chest/lying lift — 1×20", "Hip thrust (20kg) — 1×50"],
-      },
-      {
-        dayNumber: 12,
-        status: "Logged",
-        exercises: ["Walking — 1×1.5h", "Jog (mouth closed) — 1×7m", "Jog — 1×1m", "Plank — 2×1:00", "Bulgarian split squats (no load) — 1×30/side", "Diamond push-ups — 2×20", "Bulgarian split squats (no load) — 1×10/side", "Diamond push-ups — 1×20", "Diamond push-ups — 1×40", "Diamond push-ups — 1×30"],
-      },
-      {
-        dayNumber: 13,
-        status: "Logged",
-        exercises: ["Back squats (20kg) — 1×150", "Deep reps — 1×5", "One-arm sack lifts (20kg) — 1×20/arm", "Walking (no load) — 1×1.5h", "Loaded walk (10kg backpack) — 1×1.5h", "Bulgarian squats (with backpack) — 1×40/side", "Diamond push-ups (with backpack) — 1×60", "Plank — 1×1:00"],
-      },
-      {
-        dayNumber: 14,
-        status: "Logged",
-        exercises: ["Back squats (20kg) — 1×160", "Deep reps — 1×10", "Back squats (20kg) — 1×5", "Super deep reps — 1×15", "Loaded walk — 1×1h10m", "Bulgarian squats (with load) — 2×20", "Diamond push-ups (with load) — 2×20", "Plank — 1×1:00", "One-arm pulls (20kg sack) — 2×20/side"],
-      },
-      {
-        dayNumber: 15,
-        status: "Planned",
-        exercises: ["Back squats (20kg) — 1×160", "Deep reps — 1×10", "Back squats (20kg) — 1×5", "Super deep reps — 1×15", "Loaded walk — 1×1h10m", "Bulgarian squats (with load) — 2×20", "Diamond push-ups (with load) — 2×20", "Plank — 1×1:00", "One-arm pulls (20kg sack) — 2×20/side"],
-      }
+  // Seed home data
+  const existingHome = await storage.getDaysByCategory("home");
+  if (existingHome.length === 0) {
+    const homeSeed = [
+      { dayNumber: 1, status: "Logged", category: "home", exercises: ["Diamond push-ups \u2014 1\u00D740", "Squats (25kg) \u2014 1\u00D730", "Dumbbell curls (10 lbs each arm) \u2014 1\u00D7100"] },
+      { dayNumber: 2, status: "Logged", category: "home", exercises: ["Diamond push-ups \u2014 1\u00D720", "Normal push-ups \u2014 1\u00D720", "Squats (25kg) \u2014 1\u00D735", "Squats (25kg) \u2014 1\u00D730"] },
+      { dayNumber: 3, status: "Logged", category: "home", exercises: ["Squats (25kg) \u2014 1\u00D740", "Squats (25kg) \u2014 1\u00D740"] },
+      { dayNumber: 4, status: "Logged", category: "home", exercises: ["Back squats (25kg) \u2014 1\u00D770", "Back squats (25kg) \u2014 1\u00D780", "Walking \u2014 1\u00D72h"] },
+      { dayNumber: 5, status: "Logged", category: "home", exercises: ["Back squats (25kg) \u2014 1\u00D7100", "Back squats (25kg) \u2014 1\u00D760", "Bicep curls (10 lbs each arm) \u2014 2\u00D7100", "Bulgarian split squats (10 lbs each hand) \u2014 1\u00D715/leg", "Deep side push-ups \u2014 1\u00D720", "Diamond push-ups \u2014 2\u00D740", "Walking \u2014 1\u00D72h"] },
+      { dayNumber: 6, status: "Logged", category: "home", exercises: ["Jogging \u2014 2\u00D75m", "Plank \u2014 1\u00D71:00", "Plank \u2014 1\u00D70:40", "Sit-ups \u2014 1\u00D710", "Back squats (load) \u2014 1\u00D730", "Diamond push-ups \u2014 1\u00D720", "Walking \u2014 1\u00D72h"] },
+      { dayNumber: 7, status: "Logged", category: "home", exercises: ["Back squats (load) \u2014 1\u00D7110", "Jogging (mouth closed) \u2014 1\u00D75m", "Diamond push-ups \u2014 1\u00D740", "Diamond push-ups \u2014 1\u00D720", "Walking \u2014 1\u00D72h"] },
+      { dayNumber: 8, status: "Logged", category: "home", exercises: ["Back squats \u2014 1\u00D7120", "One-arm sack-of-rice lifts (25kg) \u2014 1\u00D75 (L)", "One-arm sack-of-rice lifts (25kg) \u2014 1\u00D75 (R)"] },
+      { dayNumber: 9, status: "Logged", category: "home", exercises: ["One-arm lifts to waist level (20kg) \u2014 2\u00D720/arm", "Back squats (20kg) \u2014 1\u00D7139", "Deep squats \u2014 1\u00D73"] },
+      { dayNumber: 10, status: "Logged", category: "home", exercises: ["Rest \u2014 1\u00D7day"] },
+      { dayNumber: 11, status: "Logged", category: "home", exercises: ["One-hand bent pull (20kg) \u2014 2\u00D730", "Lying sack lift to chest \u2014 1\u00D710", "Hip thrust (20kg) \u2014 1\u00D750", "Chest/lying lift \u2014 1\u00D720", "Hip thrust (20kg) \u2014 1\u00D750"] },
+      { dayNumber: 12, status: "Logged", category: "home", exercises: ["Walking \u2014 1\u00D71.5h", "Jog (mouth closed) \u2014 1\u00D77m", "Jog \u2014 1\u00D71m", "Plank \u2014 2\u00D71:00", "Bulgarian split squats (no load) \u2014 1\u00D730/side", "Diamond push-ups \u2014 2\u00D720", "Bulgarian split squats (no load) \u2014 1\u00D710/side", "Diamond push-ups \u2014 1\u00D720", "Diamond push-ups \u2014 1\u00D740", "Diamond push-ups \u2014 1\u00D730"] },
+      { dayNumber: 13, status: "Logged", category: "home", exercises: ["Back squats (20kg) \u2014 1\u00D7150", "Deep reps \u2014 1\u00D75", "One-arm sack lifts (20kg) \u2014 1\u00D720/arm", "Walking (no load) \u2014 1\u00D71.5h", "Loaded walk (10kg backpack) \u2014 1\u00D71.5h", "Bulgarian squats (with backpack) \u2014 1\u00D740/side", "Diamond push-ups (with backpack) \u2014 1\u00D760", "Plank \u2014 1\u00D71:00"] },
+      { dayNumber: 14, status: "Logged", category: "home", exercises: ["Back squats (20kg) \u2014 1\u00D7160", "Deep reps \u2014 1\u00D710", "Back squats (20kg) \u2014 1\u00D75", "Super deep reps \u2014 1\u00D715", "Loaded walk \u2014 1\u00D71h10m", "Bulgarian squats (with load) \u2014 2\u00D720", "Diamond push-ups (with load) \u2014 2\u00D720", "Plank \u2014 1\u00D71:00", "One-arm pulls (20kg sack) \u2014 2\u00D720/side"] },
+      { dayNumber: 15, status: "Planned", category: "home", exercises: ["Back squats (20kg) \u2014 1\u00D7160", "Deep reps \u2014 1\u00D710", "Back squats (20kg) \u2014 1\u00D75", "Super deep reps \u2014 1\u00D715", "Loaded walk \u2014 1\u00D71h10m", "Bulgarian squats (with load) \u2014 2\u00D720", "Diamond push-ups (with load) \u2014 2\u00D720", "Plank \u2014 1\u00D71:00", "One-arm pulls (20kg sack) \u2014 2\u00D720/side"] },
     ];
-    for (const day of seedData) {
+    for (const day of homeSeed) {
       await storage.createDay(day);
     }
   }
+
+  // Seed gym data
+  const existingGym = await storage.getDaysByCategory("gym");
+  if (existingGym.length === 0) {
+    const gymSeed = [
+      { dayNumber: 1, status: "Logged", category: "gym", exercises: ["Back Squat: 25kg (55 lb) \u2014 3\u00D710", "Leg Press: 80kg (176 lb) \u2014 3\u00D712", "Leg Extension: 25kg (55 lb) \u2014 3\u00D715", "Diamond Push-ups \u2014 2\u00D715", "Walk: 30 min"] },
+      { dayNumber: 2, status: "Logged", category: "gym", exercises: ["Back Squat: 30kg (66 lb) \u2014 4\u00D710", "Romanian Deadlift: 30kg (66 lb) \u2014 3\u00D712", "Walking Lunges (DB): 10kg each (22 lb each) \u2014 3\u00D712/leg", "Plank \u2014 2\u00D745 sec", "Walk: 45 min"] },
+      { dayNumber: 3, status: "Logged", category: "gym", exercises: ["Back Squat: 35kg (77 lb) \u2014 4\u00D710", "Leg Press: 100kg (220 lb) \u2014 4\u00D712", "Seated Leg Curl: 25kg (55 lb) \u2014 3\u00D715", "Calf Raises: 60kg (132 lb) \u2014 4\u00D715", "Walk: 45 min"] },
+      { dayNumber: 4, status: "Logged", category: "gym", exercises: ["Back Squat: 40kg (88 lb) \u2014 5\u00D78", "Bulgarian Split Squat (DB): 12.5kg each (28 lb each) \u2014 3\u00D710/leg", "Leg Extension: 30kg (66 lb) \u2014 4\u00D712", "Diamond Push-ups \u2014 3\u00D715", "Walk: 60 min"] },
+      { dayNumber: 5, status: "Logged", category: "gym", exercises: ["Back Squat: 45kg (99 lb) \u2014 5\u00D78", "Romanian Deadlift: 45kg (99 lb) \u2014 4\u00D710", "Leg Press: 120kg (265 lb) \u2014 4\u00D712", "Cable Crunch \u2014 3\u00D715", "Walk: 60 min"] },
+      { dayNumber: 6, status: "Logged", category: "gym", exercises: ["Back Squat: 50kg (110 lb) \u2014 4\u00D76", "Lat Pulldown: 40kg (88 lb) \u2014 4\u00D710", "Seated Row: 40kg (88 lb) \u2014 3\u00D710", "Incline DB Press: 12.5kg each (28 lb each) \u2014 3\u00D710", "Jog: 8 min"] },
+      { dayNumber: 7, status: "Logged", category: "gym", exercises: ["Back Squat: 60kg (132 lb) \u2014 5\u00D76", "Leg Press: 140kg (309 lb) \u2014 4\u00D710", "Leg Extension: 35kg (77 lb) \u2014 4\u00D712", "Calf Raises: 80kg (176 lb) \u2014 4\u00D712", "Walk: 90 min"] },
+      { dayNumber: 8, status: "Logged", category: "gym", exercises: ["Back Squat: 70kg (154 lb) \u2014 5\u00D75", "Romanian Deadlift: 60kg (132 lb) \u2014 4\u00D78", "Walking Lunges (DB): 15kg each (33 lb each) \u2014 3\u00D710/leg", "Plank \u2014 2\u00D760 sec", "Walk: 60 min"] },
+      { dayNumber: 9, status: "Logged", category: "gym", exercises: ["Back Squat: 75kg (165 lb) \u2014 6\u00D74", "Leg Press: 160kg (353 lb) \u2014 4\u00D710", "Seated Leg Curl: 35kg (77 lb) \u2014 3\u00D712", "Cable Lateral Raise: 7.5kg (17 lb) \u2014 3\u00D715/side", "Walk: 60 min"] },
+      { dayNumber: 10, status: "Logged", category: "gym", exercises: ["Back Squat: 80kg (176 lb) \u2014 3\u00D75 (lighter day)", "Bench Press: 50kg (110 lb) \u2014 4\u00D78", "Triceps Pushdown: 25kg (55 lb) \u2014 3\u00D712", "DB Curls: 12.5kg each (28 lb each) \u2014 3\u00D712", "Walk: 45 min"] },
+      { dayNumber: 11, status: "Logged", category: "gym", exercises: ["Back Squat: 85kg (187 lb) \u2014 5\u00D74", "Romanian Deadlift: 70kg (154 lb) \u2014 4\u00D76", "Bulgarian Split Squat (DB): 17.5kg each (39 lb each) \u2014 3\u00D78/leg", "Hanging Knee Raises \u2014 3\u00D712", "Walk: 60 min"] },
+      { dayNumber: 12, status: "Logged", category: "gym", exercises: ["Back Squat: 90kg (198 lb) \u2014 5\u00D73", "Leg Press: 180kg (397 lb) \u2014 4\u00D78", "Leg Extension: 40kg (88 lb) \u2014 4\u00D710", "Calf Raises: 100kg (220 lb) \u2014 4\u00D712", "Jog: 7 min"] },
+      { dayNumber: 13, status: "Logged", category: "gym", exercises: ["Back Squat: 95kg (209 lb) \u2014 6\u00D73", "Seated Row: 50kg (110 lb) \u2014 4\u00D78", "Incline DB Press: 17.5kg each (39 lb each) \u2014 4\u00D78", "Face Pulls: 20kg (44 lb) \u2014 3\u00D715", "Walk: 90 min"] },
+      { dayNumber: 14, status: "Logged", category: "gym", exercises: ["Back Squat: 100kg (220 lb) \u2014 5\u00D72 + 1\u00D7AMRAP (6 reps)", "Romanian Deadlift: 80kg (176 lb) \u2014 4\u00D75", "Walking Lunges (DB): 20kg each (44 lb each) \u2014 3\u00D78/leg", "Plank \u2014 2\u00D760 sec", "Walk: 120 min"] },
+      { dayNumber: 15, status: "Logged", category: "gym", exercises: ["Back Squat: 110kg (243 lb) \u2014 1\u00D75 (PR set) + 3\u00D73 back-off at 95kg (209 lb)", "Leg Press: 200kg (441 lb) \u2014 4\u00D78", "Bulgarian Split Squat (DB): 22.5kg each (50 lb each) \u2014 3\u00D78/leg", "Diamond Push-ups \u2014 3\u00D715", "Loaded Walk: 60\u201390 min"] },
+    ];
+    for (const day of gymSeed) {
+      await storage.createDay(day);
+    }
+  }
+
+  // Start Telegram bot
+  startTelegramBot();
 
   return httpServer;
 }

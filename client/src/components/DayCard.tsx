@@ -1,23 +1,22 @@
-import { Dumbbell, Edit2, Trash2 } from "lucide-react";
+import { Dumbbell } from "lucide-react";
 import type { Day } from "@shared/schema";
 
 interface DayCardProps {
   day: Day;
-  onEdit: (day: Day) => void;
-  onDelete: (day: Day) => void;
 }
 
-export function DayCard({ day, onEdit, onDelete }: DayCardProps) {
+export function DayCard({ day }: DayCardProps) {
   const isPlanned = day.status === "Planned";
   
   return (
-    <article className="glass-panel glass-card col-span-12 md:col-span-6 group transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_15px_35px_rgba(0,0,0,0.5)]">
+    <article className="glass-panel glass-card col-span-12 md:col-span-6 group transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_15px_35px_rgba(0,0,0,0.5)]" data-testid={`card-day-${day.dayNumber}`}>
       <div className="p-[14px] pb-[12px] border-b border-white/10 flex items-start justify-between gap-2.5">
         <div className="flex gap-2.5 items-center flex-wrap">
           <h3 className="m-0 text-[15px] tracking-[0.2px] font-bold text-white drop-shadow-sm">
             Day {day.dayNumber}
           </h3>
           <span 
+            data-testid={`badge-status-${day.dayNumber}`}
             className={`
               text-[11px] px-2.5 py-1.5 rounded-full border whitespace-nowrap font-medium tracking-wide shadow-sm
               ${isPlanned 
@@ -28,22 +27,6 @@ export function DayCard({ day, onEdit, onDelete }: DayCardProps) {
           >
             {day.status}
           </span>
-        </div>
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-black/40 rounded-full border border-white/5 p-1 backdrop-blur-sm">
-          <button 
-            onClick={() => onEdit(day)}
-            className="p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-            title="Edit day"
-          >
-            <Edit2 size={14} />
-          </button>
-          <button 
-            onClick={() => onDelete(day)}
-            className="p-1.5 rounded-full hover:bg-red-500/20 text-white/70 hover:text-red-400 transition-colors"
-            title="Delete day"
-          >
-            <Trash2 size={14} />
-          </button>
         </div>
       </div>
       
@@ -59,7 +42,7 @@ export function DayCard({ day, onEdit, onDelete }: DayCardProps) {
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-[#a7b3d6] italic italic mt-2">No exercises logged yet.</p>
+            <p className="text-xs text-[#a7b3d6] italic mt-2">No exercises logged yet.</p>
           )}
         </div>
       </div>

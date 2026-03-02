@@ -1,0 +1,284 @@
+update the gui:
+at the very top put a live bar graph that shows how intense the exercise is that day the graph changes and updates everytime.
+beloe that add this button:
+|home workout | gym workout|
+when the home is click, the graph changes and also the logs. the current d1-15 logs are for the home workout this is the gym workout:
+Below is a D1–D15 gym logs:
+DAY 1
+
+
+Back Squat: 25kg (55 lb) — 3×10
+
+Leg Press: 80kg (176 lb) — 3×12
+
+Leg Extension: 25kg (55 lb) — 3×15
+
+Diamond Push-ups: 2×15
+
+Walk: 30 min
+
+
+
+DAY 2
+
+
+Back Squat: 30kg (66 lb) — 4×10
+
+Romanian Deadlift: 30kg (66 lb) — 3×12
+
+Walking Lunges (DB): 10kg each (22 lb each) — 3×12/leg
+
+Plank: 2×45 sec
+
+Walk: 45 min
+
+
+
+DAY 3
+
+
+Back Squat: 35kg (77 lb) — 4×10
+
+Leg Press: 100kg (220 lb) — 4×12
+
+Seated Leg Curl: 25kg (55 lb) — 3×15
+
+Calf Raises: 60kg (132 lb) — 4×15
+
+Walk: 45 min
+
+
+
+DAY 4
+
+
+Back Squat: 40kg (88 lb) — 5×8
+
+Bulgarian Split Squat (DB): 12.5kg each (28 lb each) — 3×10/leg
+
+Leg Extension: 30kg (66 lb) — 4×12
+
+Diamond Push-ups: 3×15
+
+Walk: 60 min
+
+
+
+DAY 5
+
+
+Back Squat: 45kg (99 lb) — 5×8
+
+Romanian Deadlift: 45kg (99 lb) — 4×10
+
+Leg Press: 120kg (265 lb) — 4×12
+
+Cable Crunch: 3×15
+
+Walk: 60 min
+
+
+
+DAY 6
+
+
+Back Squat: 50kg (110 lb) — 4×6
+
+Lat Pulldown: 40kg (88 lb) — 4×10
+
+Seated Row: 40kg (88 lb) — 3×10
+
+Incline DB Press: 12.5kg each (28 lb each) — 3×10
+
+Jog: 8 min
+
+
+
+DAY 7
+
+
+Back Squat: 60kg (132 lb) — 5×6
+
+Leg Press: 140kg (309 lb) — 4×10
+
+Leg Extension: 35kg (77 lb) — 4×12
+
+Calf Raises: 80kg (176 lb) — 4×12
+
+Walk: 90 min
+
+
+
+DAY 8
+
+
+Back Squat: 70kg (154 lb) — 5×5
+
+Romanian Deadlift: 60kg (132 lb) — 4×8
+
+Walking Lunges (DB): 15kg each (33 lb each) — 3×10/leg
+
+Plank: 2×60 sec
+
+Walk: 60 min
+
+
+
+DAY 9
+
+
+Back Squat: 75kg (165 lb) — 6×4
+
+Leg Press: 160kg (353 lb) — 4×10
+
+Seated Leg Curl: 35kg (77 lb) — 3×12
+
+Cable Lateral Raise: 7.5kg (17 lb) — 3×15/side
+
+Walk: 60 min
+
+
+
+DAY 10
+
+
+Back Squat: 80kg (176 lb) — 3×5 (lighter day)
+
+Bench Press: 50kg (110 lb) — 4×8
+
+Triceps Pushdown: 25kg (55 lb) — 3×12
+
+DB Curls: 12.5kg each (28 lb each) — 3×12
+
+Walk: 45 min
+
+
+
+DAY 11
+
+
+Back Squat: 85kg (187 lb) — 5×4
+
+Romanian Deadlift: 70kg (154 lb) — 4×6
+
+Bulgarian Split Squat (DB): 17.5kg each (39 lb each) — 3×8/leg
+
+Hanging Knee Raises: 3×12
+
+Walk: 60 min
+
+
+
+DAY 12
+
+
+Back Squat: 90kg (198 lb) — 5×3
+
+Leg Press: 180kg (397 lb) — 4×8
+
+Leg Extension: 40kg (88 lb) — 4×10
+
+Calf Raises: 100kg (220 lb) — 4×12
+
+Jog: 7 min
+
+
+
+DAY 13
+
+
+Back Squat: 95kg (209 lb) — 6×3
+
+Seated Row: 50kg (110 lb) — 4×8
+
+Incline DB Press: 17.5kg each (39 lb each) — 4×8
+
+Face Pulls: 20kg (44 lb) — 3×15
+
+Walk: 90 min
+
+
+
+DAY 14
+
+
+Back Squat: 100kg (220 lb) — 5×2 + 1×AMRAP (6 reps)
+
+Romanian Deadlift: 80kg (176 lb) — 4×5
+
+Walking Lunges (DB): 20kg each (44 lb each) — 3×8/leg
+
+Plank: 2×60 sec
+
+Walk: 120 min
+
+
+
+DAY 15
+
+
+Back Squat: 110kg (243 lb) — 1×5 (PR set) + 3×3 back-off at 95kg (209 lb)
+
+Leg Press: 200kg (441 lb) — 4×8
+
+Bulgarian Split Squat (DB): 22.5kg each (50 lb each) — 3×8/leg
+
+Diamond Push-ups: 3×15
+
+Loaded Walk: 60–90 min
+
+
+
+
+
+make sure the bar graph in the gym workout changes as well.
+also in the home make it like this:
+graph-
+below it put this:
+daily intake:
+creatine: 5g
+whey: 132g (33g = 50g of protein)
+Caffeine: 700mg
+L-Citrulline – 8,000 mg 
+Beta-Alanine – 3,200 mg
+L-Theanine – 400 mg
+Dicaffeine Malate – 300 mg
+BioPerine® (Piperine 50:1) – 4.8 mg
+Capsaicine – 3 mg
+Neurocore Secret Blend – 5,523 mg
+
+and make sure to disable the adding, editing in the web only in telegram using my bot in tg for example if i send this:
+/updated15 home
+the bot will reply:
+please enter what you want to update
+then i can type:
+back squats - 1x200 (30kg)
+etc etc
+then it will reflect to the web app
+if saving:
+/save_homed16
+it will reply:
+please type down your progress:
+if data is already present in there,
+reply: data already exist, do you want to update it?
+-yes button- -no button-
+when yes is click ask me what to input and if no click, do nothing just reply 'got it!'
+its also the same on gym workout:
+commands are
+/updatedd15 work
+/save_gymd16
+when i send to the bot:
+/commands
+bot will give me all commands
+every time i update, edit, add, bar graph added. and it can be scroll to left or right to show prev or new days.
+also improve the tg bot, add more 10 commands ill let you decide, just put /help that explains me what to do.
+my tg id:
+7474049767
+tg bot:
+8746595693:AAHyqmtBzMXyT1OyKIuxaQ3QkCVBqCWgovI
+
+also update the UI, make it more modern add more features and make sure the tg bot will work in node js so search the  integration. dont forget to add 10 more commands tottaling of 14 commands and add detailed explaination in: /help
+also in tg  bot add a function when i send
+/export_home_logs
+/export_gym_logs
+it will give me complete log of d1-to current, ready to copy. make the tg bot beautiful with inline buttons, etc
