@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { storage } from "./storage";
 import { log } from "./index";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: "AIzaSyDlFlj9C9gzOgwe9Ic-TIieK5I6FHW1Ek8" });
 
 async function getAllLogsContext(): Promise<string> {
   const homeDays = await storage.getDaysByCategory("home");
