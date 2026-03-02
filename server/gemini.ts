@@ -4,11 +4,13 @@ import { log } from "./index";
 
 const ai = new GoogleGenAI({ apiKey: "AIzaSyDlFlj9C9gzOgwe9Ic-TIieK5I6FHW1Ek8" });
 
+const GEMINI_MODEL = "gemini-2.5-flash";
+
 async function getAllLogsContext(): Promise<string> {
   const homeDays = await storage.getDaysByCategory("home");
   const gymDays = await storage.getDaysByCategory("gym");
-  const sortedHome = homeDays.sort((a, b) => a.dayNumber - b.dayNumber);
-  const sortedGym = gymDays.sort((a, b) => a.dayNumber - b.dayNumber);
+  const sortedHome = homeDays.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+  const sortedGym = gymDays.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
 
   let context = "=== JOHN'S WORKOUT LOGS ===\n\n";
   context += "--- HOME WORKOUTS ---\n";
@@ -34,7 +36,11 @@ IMPORTANT RULES:
 - After executing any action, confirm what you did and add a short motivating comment
 - You can also manage browser memory (persistent instructions for the web chat AI)
 - For status updates, "Logged" means the workout is done/completed
-- When deleting, always confirm before executing unless John is explicit`;
+- When deleting, always confirm before executing unless John is explicit
+- You can set reminders for John (birthdays, tasks, hydration, etc.)
+- You can create and restore backups of all data
+- You have access to the current date/time: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })}
+- When analyzing images, describe what you see and provide fitness-related feedback if relevant`;
 
 const functionDeclarations = [
   {
@@ -65,7 +71,7 @@ const functionDeclarations = [
   },
   {
     name: "mark_status_done",
-    description: "Mark a workout day as done/completed (status = 'Logged'). Use when John says a day is done/completed/finished.",
+    description: "Mark a workout day as done/completed (status = 'Logged').",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -113,10 +119,7 @@ const functionDeclarations = [
   {
     name: "get_stats",
     description: "Get overall workout progress statistics.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-    },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "get_intensity",
@@ -142,7 +145,7 @@ const functionDeclarations = [
   },
   {
     name: "save_browser_memory",
-    description: "Save or update persistent memory/instructions for the web chat AI. This memory will be referenced by the AI in every web chat conversation.",
+    description: "Save or update persistent memory/instructions for the web chat AI.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -154,26 +157,55 @@ const functionDeclarations = [
   {
     name: "view_browser_memory",
     description: "View the current browser/web chat memory.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-    },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "delete_browser_memory",
     description: "Delete the browser/web chat memory.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-    },
+    parameters: { type: Type.OBJECT, properties: {} },
   },
   {
     name: "clear_ai_memory",
     description: "Clear the Telegram AI conversation memory/history.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "set_reminder",
+    description: "Set a reminder for John. He will receive a Telegram message at the specified time. Examples: 'remind me in 2 minutes to drink water', 'remind me on March 5 about birthday'.",
     parameters: {
       type: Type.OBJECT,
-      properties: {},
+      properties: {
+        message: { type: Type.STRING, description: "The reminder message" },
+        delay_seconds: { type: Type.INTEGER, description: "Number of seconds from now until the reminder triggers" },
+      },
+      required: ["message", "delay_seconds"],
     },
+  },
+  {
+    name: "list_reminders",
+    description: "List all pending (unsent) reminders.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "delete_reminder",
+    description: "Delete a specific reminder by ID.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        reminder_id: { type: Type.INTEGER, description: "The reminder ID to delete" },
+      },
+      required: ["reminder_id"],
+    },
+  },
+  {
+    name: "create_backup",
+    description: "Create a full backup of all data (workout logs, chat history, reminders, etc.) and return it as JSON.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "get_last_backup_info",
+    description: "Get info about the last backup or restore operation.",
+    parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
 
@@ -205,12 +237,7 @@ async function executeFunction(name: string, args: any): Promise<string> {
         if (existing) {
           return JSON.stringify({ error: `${category} Day ${day_number} already exists. Use update_workout to modify it.` });
         }
-        const day = await storage.createDay({
-          dayNumber: day_number,
-          status: "Logged",
-          exercises,
-          category,
-        });
+        const day = await storage.createDay({ dayNumber: day_number, status: "Logged", exercises, category });
         return JSON.stringify({ success: true, message: `${category} Day ${day_number} saved with ${exercises.length} exercises.`, day });
       }
 
@@ -259,18 +286,18 @@ async function executeFunction(name: string, args: any): Promise<string> {
       case "view_all_workouts": {
         const { category } = args;
         const allDays = await storage.getDaysByCategory(category);
-        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
-        return JSON.stringify({ success: true, category, total: sorted.length, days: sorted.map(d => ({ dayNumber: d.dayNumber, status: d.status, exercises: d.exercises, intensity: calcIntensity(d.exercises) })) });
+        const sorted = allDays.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+        return JSON.stringify({ success: true, category, total: sorted.length, days: sorted.map((d: any) => ({ dayNumber: d.dayNumber, status: d.status, exercises: d.exercises, intensity: calcIntensity(d.exercises) })) });
       }
 
       case "get_stats": {
         const homeDays = await storage.getDaysByCategory("home");
         const gymDays = await storage.getDaysByCategory("gym");
-        const homeLogged = homeDays.filter(d => d.status === "Logged").length;
-        const gymLogged = gymDays.filter(d => d.status === "Logged").length;
-        const homeIntensity = homeDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
-        const gymIntensity = gymDays.reduce((sum, d) => sum + calcIntensity(d.exercises), 0);
-        const totalExercises = [...homeDays, ...gymDays].reduce((sum, d) => sum + d.exercises.length, 0);
+        const homeLogged = homeDays.filter((d: any) => d.status === "Logged").length;
+        const gymLogged = gymDays.filter((d: any) => d.status === "Logged").length;
+        const homeIntensity = homeDays.reduce((sum: number, d: any) => sum + calcIntensity(d.exercises), 0);
+        const gymIntensity = gymDays.reduce((sum: number, d: any) => sum + calcIntensity(d.exercises), 0);
+        const totalExercises = [...homeDays, ...gymDays].reduce((sum: number, d: any) => sum + d.exercises.length, 0);
         return JSON.stringify({
           success: true,
           home: { totalDays: homeDays.length, logged: homeLogged, totalIntensity: homeIntensity },
@@ -282,22 +309,22 @@ async function executeFunction(name: string, args: any): Promise<string> {
       case "get_intensity": {
         const { category } = args;
         const allDays = await storage.getDaysByCategory(category);
-        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
-        const data = sorted.map(d => ({ dayNumber: d.dayNumber, intensity: calcIntensity(d.exercises) }));
+        const sorted = allDays.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+        const data = sorted.map((d: any) => ({ dayNumber: d.dayNumber, intensity: calcIntensity(d.exercises) }));
         return JSON.stringify({ success: true, category, data });
       }
 
       case "export_logs": {
         const { category } = args;
         const allDays = await storage.getDaysByCategory(category);
-        const sorted = allDays.sort((a, b) => a.dayNumber - b.dayNumber);
+        const sorted = allDays.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
         return JSON.stringify({ success: true, category, total: sorted.length, days: sorted });
       }
 
       case "save_browser_memory": {
         const { content } = args;
         await storage.saveBrowserMemory(content);
-        return JSON.stringify({ success: true, message: "Browser memory saved. The web chat AI will now reference this in every conversation." });
+        return JSON.stringify({ success: true, message: "Browser memory saved." });
       }
 
       case "view_browser_memory": {
@@ -315,6 +342,39 @@ async function executeFunction(name: string, args: any): Promise<string> {
         return JSON.stringify({ success: true, message: "Telegram AI conversation memory cleared." });
       }
 
+      case "set_reminder": {
+        const { message, delay_seconds } = args;
+        const triggerAt = new Date(Date.now() + delay_seconds * 1000);
+        const reminder = await storage.addReminder(message, triggerAt);
+        const timeStr = triggerAt.toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true });
+        return JSON.stringify({ success: true, message: `Reminder set: "${message}" at ${timeStr}`, reminder });
+      }
+
+      case "list_reminders": {
+        const reminders = await storage.getAllReminders();
+        return JSON.stringify({ success: true, reminders: reminders.map((r: any) => ({ id: r.id, message: r.message, triggerAt: r.triggerAt })) });
+      }
+
+      case "delete_reminder": {
+        const { reminder_id } = args;
+        await storage.deleteReminder(reminder_id);
+        return JSON.stringify({ success: true, message: `Reminder ${reminder_id} deleted.` });
+      }
+
+      case "create_backup": {
+        const data = await storage.exportAllData();
+        await storage.logBackup("download", `Full backup exported with ${JSON.stringify(data).length} bytes`);
+        return JSON.stringify({ success: true, message: "Backup created. Sending as file...", data });
+      }
+
+      case "get_last_backup_info": {
+        const lastBackup = await storage.getLastBackupLog();
+        if (!lastBackup) {
+          return JSON.stringify({ success: true, message: "No backup/restore operations recorded yet." });
+        }
+        return JSON.stringify({ success: true, lastBackup });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown function: ${name}` });
     }
@@ -323,7 +383,7 @@ async function executeFunction(name: string, args: any): Promise<string> {
   }
 }
 
-export async function chatWithGeminiTelegram(userMessage: string): Promise<string> {
+export async function chatWithGeminiTelegram(userMessage: string, imageParts?: any[]): Promise<string> {
   try {
     const logsContext = await getAllLogsContext();
     const memory = await storage.getChatMemory();
@@ -341,20 +401,25 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
       }
     }
 
+    const userParts: any[] = [{ text: userMessage }];
+    if (imageParts && imageParts.length > 0) {
+      userParts.push(...imageParts);
+    }
+
     if (lastRole === "user" && contents.length > 0) {
-      contents[contents.length - 1].parts[0].text += "\n" + userMessage;
+      contents[contents.length - 1].parts.push(...userParts);
     } else {
-      contents.push({ role: "user", parts: [{ text: userMessage }] });
+      contents.push({ role: "user", parts: userParts });
     }
 
     await storage.addChatMemory("user", userMessage);
 
     let response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents,
       config: {
         systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${logsContext}`,
-        tools: [{ functionDeclarations }],
+        tools: [{ functionDeclarations }, { googleSearch: {} }],
       },
     });
 
@@ -379,11 +444,11 @@ export async function chatWithGeminiTelegram(userMessage: string): Promise<strin
       contents.push({ role: "user", parts: [{ functionResponse: { name, response: JSON.parse(result) } }] });
 
       response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_MODEL,
         contents,
         config: {
           systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${await getAllLogsContext()}`,
-          tools: [{ functionDeclarations }],
+          tools: [{ functionDeclarations }, { googleSearch: {} }],
         },
       });
     }
@@ -422,10 +487,11 @@ export async function chatWithGeminiWeb(userMessage: string, sessionHistory: { r
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents,
       config: {
         systemInstruction: `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You are chatting with a visitor on John's public workout tracking web app. Be friendly and helpful. Answer questions about John's workout progress, routines, and fitness journey based on the data. Keep responses short and engaging.${memoryContext}\n\nCurrent workout data:\n${logsContext}`,
+        tools: [{ googleSearch: {} }],
       },
     });
 
@@ -441,7 +507,7 @@ export async function getGeminiComment(action: string, details: string): Promise
     const logsContext = await getAllLogsContext();
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents: `John just performed this action: ${action}\nDetails: ${details}\n\nGive a short, motivating comment (2-3 sentences max). Be specific about what he did.`,
       config: {
         systemInstruction: `You are John's personal AI workout assistant. Be supportive and motivating. Keep it brief.\n\nWorkout data:\n${logsContext}`,
@@ -452,5 +518,30 @@ export async function getGeminiComment(action: string, details: string): Promise
   } catch (err: any) {
     log(`Gemini comment error: ${err.message}`, "gemini");
     return "";
+  }
+}
+
+export async function analyzeImageWithGemini(imageBuffer: Buffer, mimeType: string, prompt: string): Promise<string> {
+  try {
+    const base64 = imageBuffer.toString("base64");
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{
+        role: "user",
+        parts: [
+          { text: prompt || "What do you see in this image? If it's fitness-related, provide relevant analysis." },
+          { inlineData: { mimeType, data: base64 } },
+        ],
+      }],
+      config: {
+        systemInstruction: "You are John's personal AI workout assistant. Analyze images and provide helpful, fitness-focused commentary when relevant.",
+      },
+    });
+
+    return response.text || "I couldn't analyze the image.";
+  } catch (err: any) {
+    log(`Gemini image error: ${err.message}`, "gemini");
+    return "Sorry, I couldn't analyze that image right now.";
   }
 }

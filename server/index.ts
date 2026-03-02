@@ -73,6 +73,13 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  try {
+    const { migratePostgresToMongo } = await import("./migrate-to-mongo");
+    await migratePostgresToMongo();
+  } catch (err: any) {
+    log(`Migration note: ${err.message}`, "migration");
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

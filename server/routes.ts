@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -80,7 +80,6 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
-  // Seed home data
   const existingHome = await storage.getDaysByCategory("home");
   if (existingHome.length === 0) {
     const homeSeed = [
@@ -105,7 +104,6 @@ export async function registerRoutes(
     }
   }
 
-  // Seed gym data
   const existingGym = await storage.getDaysByCategory("gym");
   if (existingGym.length === 0) {
     const gymSeed = [
@@ -130,7 +128,6 @@ export async function registerRoutes(
     }
   }
 
-  // Visitor tracking
   app.post("/api/visitor", async (req, res) => {
     try {
       const { fingerprint, referrer } = req.body;
@@ -183,7 +180,6 @@ export async function registerRoutes(
     }
   });
 
-  // Web chat endpoint
   app.post("/api/chat", async (req, res) => {
     try {
       const { message, history } = req.body;
