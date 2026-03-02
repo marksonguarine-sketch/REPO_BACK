@@ -42,6 +42,8 @@ interface MongoReminder {
   message: string;
   triggerAt: Date;
   sent: boolean;
+  isRecurring: boolean;
+  intervalMs: number;
   createdAt: Date;
 }
 
@@ -209,12 +211,36 @@ export class MongoStorage implements IStorage {
     await col.deleteMany({});
   }
 
-  async addReminder(message: string, triggerAt: Date) {
+  async addReminder(message: string, triggerAt: Date, isRecurring: boolean = false, intervalMs: number = 0) {
     const col = await getCollection<MongoReminder>("reminders");
     const id = await getNextId("reminders");
-    const reminder = { id, message, triggerAt, sent: false, createdAt: new Date() };
+    const reminder = { id, message, triggerAt, sent: false, isRecurring, intervalMs, createdAt: new Date() };
     await col.insertOne(reminder as any);
     return reminder;
+  }
+
+  async claimDueReminders(): Promise<any[]> {
+    const col = await getCollection<MongoReminder>("reminders");
+    const now = new Date();
+    const docs = await col.find({ sent: false, triggerAt: { $lte: now } }).toArray();
+    const claimed: any[] = [];
+    for (const d of docs) {
+      const result = await col.findOneAndUpdate(
+        { id: d.id, sent: false },
+        { $set: { sent: true } },
+        { returnDocument: "after" }
+      );
+      if (result) {
+        claimed.push({
+          id: d.id,
+          message: d.message,
+          triggerAt: d.triggerAt,
+          isRecurring: d.isRecurring || false,
+          intervalMs: d.intervalMs || 0,
+        });
+      }
+    }
+    return claimed;
   }
 
   async getDueReminders() {
@@ -226,6 +252,8 @@ export class MongoStorage implements IStorage {
       message: d.message,
       triggerAt: d.triggerAt,
       sent: d.sent,
+      isRecurring: d.isRecurring || false,
+      intervalMs: d.intervalMs || 0,
       createdAt: d.createdAt,
     }));
   }
@@ -233,6 +261,11 @@ export class MongoStorage implements IStorage {
   async markReminderSent(id: number) {
     const col = await getCollection<MongoReminder>("reminders");
     await col.updateOne({ id }, { $set: { sent: true } });
+  }
+
+  async rescheduleRecurringReminder(id: number, nextTriggerAt: Date) {
+    const col = await getCollection<MongoReminder>("reminders");
+    await col.updateOne({ id }, { $set: { sent: false, triggerAt: nextTriggerAt } });
   }
 
   async getAllReminders() {
@@ -243,6 +276,8 @@ export class MongoStorage implements IStorage {
       message: d.message,
       triggerAt: d.triggerAt,
       sent: d.sent,
+      isRecurring: d.isRecurring || false,
+      intervalMs: d.intervalMs || 0,
       createdAt: d.createdAt,
     }));
   }

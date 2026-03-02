@@ -14,6 +14,13 @@ export interface IStorage {
   getBrowserMemory(): Promise<string | null>;
   saveBrowserMemory(content: string): Promise<void>;
   deleteBrowserMemory(): Promise<void>;
+  addReminder(message: string, triggerAt: Date, isRecurring?: boolean, intervalMs?: number): Promise<any>;
+  claimDueReminders(): Promise<any[]>;
+  getDueReminders(): Promise<any[]>;
+  markReminderSent(id: number): Promise<void>;
+  rescheduleRecurringReminder(id: number, nextTriggerAt: Date): Promise<void>;
+  getAllReminders(): Promise<any[]>;
+  deleteReminder(id: number): Promise<void>;
 }
 
 import { mongoStorage } from "./mongo-storage";

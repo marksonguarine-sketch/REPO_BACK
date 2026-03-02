@@ -99,11 +99,22 @@ export async function sendOwnerNotification(text: string) {
 async function checkReminders() {
   if (!botInstance) return;
   try {
-    const dueReminders = await storage.getDueReminders();
-    for (const reminder of dueReminders) {
-      await botInstance.sendMessage(OWNER_ID, `\u23F0 <b>Reminder!</b>\n\n${esc(reminder.message)}`, { parse_mode: "HTML" });
-      await storage.markReminderSent(reminder.id);
+    const claimed = await storage.claimDueReminders();
+    for (const reminder of claimed) {
+      const triggerStr = new Date(reminder.triggerAt).toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, hour: "numeric", minute: "2-digit", second: "2-digit" });
+      const nowStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, hour: "numeric", minute: "2-digit", second: "2-digit" });
+      let msg = `\u23F0 <b>Reminder!</b>\n\n${esc(reminder.message)}\n\n<i>Scheduled: ${triggerStr} | Delivered: ${nowStr}</i>`;
+      if (reminder.isRecurring) {
+        msg += `\n\u{1F501} <i>Recurring — next one in ${Math.round(reminder.intervalMs / 60000)} min</i>`;
+      }
+      await botInstance.sendMessage(OWNER_ID, msg, { parse_mode: "HTML" });
       log(`Reminder sent: ${reminder.message}`, "telegram");
+
+      if (reminder.isRecurring && reminder.intervalMs > 0) {
+        const nextTrigger = new Date(new Date(reminder.triggerAt).getTime() + reminder.intervalMs);
+        await storage.rescheduleRecurringReminder(reminder.id, nextTrigger);
+        log(`Recurring reminder rescheduled: ${reminder.message} -> ${nextTrigger.toISOString()}`, "telegram");
+      }
     }
   } catch (err: any) {
     log(`Reminder check error: ${err.message}`, "telegram");
@@ -121,7 +132,7 @@ export function startTelegramBot() {
   botInstance = bot;
   log("Telegram bot started with polling", "telegram");
 
-  reminderInterval = setInterval(checkReminders, 30000);
+  reminderInterval = setInterval(checkReminders, 3000);
   checkReminders();
 
   bot.setMyCommands([

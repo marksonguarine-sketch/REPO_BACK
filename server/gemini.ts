@@ -24,7 +24,26 @@ async function getAllLogsContext(): Promise<string> {
   return context;
 }
 
-const SYSTEM_PROMPT = `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You have full access to all workout data and can execute commands to manage workouts.
+function getCurrentPHTime(): string {
+  return new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
+function getCurrentPHTimestamp(): number {
+  return Date.now();
+}
+
+function getSystemPrompt(): string {
+  return `You are John's personal AI workout assistant in the "John's Lock-In Logs" app. You have full access to all workout data and can execute commands to manage workouts.
 
 IMPORTANT RULES:
 - You can save, update, delete, and manage workouts using the available functions
@@ -39,8 +58,22 @@ IMPORTANT RULES:
 - When deleting, always confirm before executing unless John is explicit
 - You can set reminders for John (birthdays, tasks, hydration, etc.)
 - You can create and restore backups of all data
-- You have access to the current date/time: ${new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })}
-- When analyzing images, describe what you see and provide fitness-related feedback if relevant`;
+- When analyzing images, describe what you see and provide fitness-related feedback if relevant
+
+CURRENT DATE AND TIME (Philippines timezone): ${getCurrentPHTime()}
+CURRENT UNIX TIMESTAMP (milliseconds): ${getCurrentPHTimestamp()}
+
+REMINDER RULES:
+- When setting reminders, you MUST calculate the exact trigger_at_ms (Unix timestamp in milliseconds) for when the reminder should fire
+- Use the CURRENT UNIX TIMESTAMP above as your reference point
+- For "remind me in X seconds": trigger_at_ms = current_timestamp + (X * 1000)
+- For "remind me in X minutes": trigger_at_ms = current_timestamp + (X * 60 * 1000)
+- For "remind me in X hours": trigger_at_ms = current_timestamp + (X * 3600 * 1000)
+- For "remind me in X days": trigger_at_ms = current_timestamp + (X * 86400 * 1000)
+- For "remind me at 8 PM": calculate the ms timestamp for the next occurrence of 8 PM Philippine time
+- For recurring reminders like "remind me every day at 8 PM", set is_recurring to true with interval_ms = 86400000 (24h in ms)
+- Be PRECISE with timing — no approximations`;
+}
 
 const functionDeclarations = [
   {
@@ -171,14 +204,16 @@ const functionDeclarations = [
   },
   {
     name: "set_reminder",
-    description: "Set a reminder for John. He will receive a Telegram message at the specified time. Examples: 'remind me in 2 minutes to drink water', 'remind me on March 5 about birthday'.",
+    description: "Set a reminder for John. He will receive a Telegram message at the specified time. You MUST calculate the exact trigger_at_ms Unix timestamp in milliseconds using the current timestamp provided in the system prompt.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         message: { type: Type.STRING, description: "The reminder message" },
-        delay_seconds: { type: Type.INTEGER, description: "Number of seconds from now until the reminder triggers" },
+        trigger_at_ms: { type: Type.NUMBER, description: "Exact Unix timestamp in milliseconds when the reminder should trigger. Calculate from the current timestamp in the system prompt." },
+        is_recurring: { type: Type.BOOLEAN, description: "Whether this is a recurring reminder (e.g. 'every day at 8 PM'). Default false." },
+        interval_ms: { type: Type.NUMBER, description: "For recurring reminders, the interval in milliseconds between each occurrence (e.g. 86400000 for daily). Only used if is_recurring is true." },
       },
-      required: ["message", "delay_seconds"],
+      required: ["message", "trigger_at_ms"],
     },
   },
   {
@@ -343,11 +378,12 @@ async function executeFunction(name: string, args: any): Promise<string> {
       }
 
       case "set_reminder": {
-        const { message, delay_seconds } = args;
-        const triggerAt = new Date(Date.now() + delay_seconds * 1000);
-        const reminder = await storage.addReminder(message, triggerAt);
-        const timeStr = triggerAt.toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true });
-        return JSON.stringify({ success: true, message: `Reminder set: "${message}" at ${timeStr}`, reminder });
+        const { message, trigger_at_ms, is_recurring, interval_ms } = args;
+        const triggerAt = new Date(trigger_at_ms);
+        const reminder = await storage.addReminder(message, triggerAt, is_recurring || false, interval_ms || 0);
+        const timeStr = triggerAt.toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+        const nowStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", hour12: true, hour: "numeric", minute: "2-digit", second: "2-digit" });
+        return JSON.stringify({ success: true, message: `Reminder set: "${message}" — triggers at ${timeStr} (current time: ${nowStr})`, reminder, is_recurring: is_recurring || false });
       }
 
       case "list_reminders": {
@@ -418,7 +454,7 @@ export async function chatWithGeminiTelegram(userMessage: string, imageParts?: a
       model: GEMINI_MODEL,
       contents,
       config: {
-        systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${logsContext}`,
+        systemInstruction: `${getSystemPrompt()}\n\nCurrent workout data:\n${logsContext}`,
         tools: [{ functionDeclarations }],
       },
     });
@@ -447,7 +483,7 @@ export async function chatWithGeminiTelegram(userMessage: string, imageParts?: a
         model: GEMINI_MODEL,
         contents,
         config: {
-          systemInstruction: `${SYSTEM_PROMPT}\n\nCurrent workout data:\n${await getAllLogsContext()}`,
+          systemInstruction: `${getSystemPrompt()}\n\nCurrent workout data:\n${await getAllLogsContext()}`,
           tools: [{ functionDeclarations }],
         },
       });
